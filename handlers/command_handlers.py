@@ -13,6 +13,7 @@ from version import VERSION, UPDATE_INFO
 import shlex
 import logging
 import os
+import asyncio
 import aiohttp
 from utils.constants import RSS_HOST, RSS_PORT
 import models.models as models
@@ -824,12 +825,15 @@ async def handle_help_command(event, command):
         "/import_replace(/ir) <同时发送文件> - 导入替换规则\n\n"
 
         "**RSS相关**\n"
-        "/delete_rss_user(/dru) [用户名] - 删除RSS用户\n"
+        "/delete_rss_user(/dru) [用户名] - 删除RSS用户\n\n"
 
         "**UFB相关**\n"
         "/ufb_bind(/ub) <域名> - 绑定UFB域名\n"
         "/ufb_unbind(/uu) - 解绑UFB域名\n"
         "/ufb_item_change(/uic) - 切换UFB同步配置类型\n\n"
+
+        "**批量转发**\n"
+        "/forward(/f) <源频道> <目标频道> <开始ID> <结束ID> - 批量转发指定范围的消息（保持原始格式）\n\n"
 
         "💡 **提示**\n"
         "• 括号内为命令的简写形式\n"
@@ -2251,3 +2255,273 @@ async def handle_delete_rss_user_command(event, command, parts):
         await reply_and_delete(event,error_message)
     finally:
         session.close()
+
+
+async def get_entity_from_input(client, input_str):
+    """从输入字符串获取实体（频道/群组）"""
+    try:
+        if input_str.startswith(('https://', 't.me/', '@')):
+            return await client.get_entity(input_str)
+        else:
+            # 通过名称搜索
+            async for dialog in client.iter_dialogs():
+                if dialog.name and input_str.lower() in dialog.name.lower():
+                    return dialog.entity
+            return None
+    except Exception as e:
+        logger.error(f'获取实体失败: {str(e)}')
+        return None
+
+
+async def handle_forward_command(event, command, parts):
+    """处理 forward 批量转发命令 - 参考bot.py实现"""
+    if len(parts) < 5:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event,
+            f'用法: /forward <源频道> <目标频道> <开始ID> <结束ID>\n\n'
+            '示例:\n'
+            '/forward https://t.me/source https://t.me/target 100 200\n'
+            '/forward @source_channel @target_channel 100 200\n'
+            '/forward "源频道名" "目标频道名" 100 200'
+        )
+        return
+    
+    try:
+        # 使用shlex解析以支持带引号的频道名
+        message_text = event.message.text
+        _, args_text = message_text.split(None, 1)
+        args = shlex.split(args_text)
+        
+        if len(args) < 4:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, '参数不足，请提供源频道、目标频道、开始ID和结束ID')
+            return
+            
+        source_input = args[0]
+        target_input = args[1]
+        start_id = int(args[2])
+        end_id = int(args[3])
+        
+        if start_id > end_id:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, '开始ID不能大于结束ID')
+            return
+            
+        if end_id - start_id > 1000:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, '一次最多转发1000条消息，请缩小范围')
+            return
+            
+    except ValueError as e:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, f'参数格式错误: {str(e)}\n开始ID和结束ID必须是数字')
+        return
+    
+    try:
+        # 获取用户客户端和机器人客户端
+        main = await get_main_module()
+        user_client = main.user_client
+        bot_client = await get_bot_client()
+        
+        # 获取源频道实体
+        source_entity = await get_entity_from_input(user_client, source_input)
+        if not source_entity:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, f'未找到源频道: {source_input}')
+            return
+        
+        # 获取目标频道实体
+        target_entity = await get_entity_from_input(bot_client, target_input)
+        if not target_entity:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, f'未找到目标频道: {target_input}')
+            return
+        
+        # 发送开始提示
+        source_name = source_entity.title if hasattr(source_entity, 'title') else str(source_entity.id)
+        target_name = target_entity.title if hasattr(target_entity, 'title') else str(target_entity.id)
+        
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        status_msg = await event.respond(
+            f'🚀 开始批量转发...\n\n'
+            f'源频道: {source_name}\n'
+            f'目标频道: {target_name}\n'
+            f'消息范围: {start_id} - {end_id}\n'
+            f'状态: 准备中...'
+        )
+        
+        # 批量转发消息
+        success_count = 0
+        fail_count = 0
+        skip_count = 0
+        processed_groups = set()  # 记录已处理的媒体组
+        
+        # 使用iter_messages从新到旧遍历，但设置reverse=True从旧到新
+        messages_list = []
+        async for message in user_client.iter_messages(
+            source_entity,
+            min_id=start_id - 1,
+            max_id=end_id + 1,
+            reverse=True
+        ):
+            if start_id <= message.id <= end_id:
+                messages_list.append(message)
+        
+        logger.info(f'获取到 {len(messages_list)} 条消息，开始转发')
+        
+        # 遍历消息进行转发
+        for idx, message in enumerate(messages_list):
+            try:
+                # 处理媒体组消息
+                if message.grouped_id:
+                    # 如果已经处理过这个媒体组，跳过
+                    if message.grouped_id in processed_groups:
+                        skip_count += 1
+                        continue
+                    
+                    processed_groups.add(message.grouped_id)
+                    
+                    # 收集属于同一媒体组的所有消息
+                    group_messages = [
+                        msg for msg in messages_list
+                        if msg.grouped_id == message.grouped_id
+                    ]
+                    group_messages.sort(key=lambda m: m.id)
+                    
+                    # 下载媒体文件
+                    media_files = []
+                    caption = None
+                    caption_entities = None
+                    
+                    for msg in group_messages:
+                        if msg.media:
+                            # 下载媒体文件
+                            file_path = await msg.download_media(
+                                os.path.join(TEMP_DIR, f'forward_group_{msg.id}')
+                            )
+                            if file_path:
+                                media_files.append(file_path)
+                        # 使用第一条有文本的消息作为caption
+                        if not caption and msg.message:  # 使用 msg.message 而不是 msg.text
+                            caption = msg.message
+                            caption_entities = msg.entities
+                    
+                    # 发送媒体组
+                    if media_files:
+                        try:
+                            await bot_client.send_file(
+                                target_entity,
+                                media_files,
+                                caption=caption,
+                                formatting_entities=caption_entities
+                            )
+                            success_count += len(group_messages)
+                            logger.info(f'成功转发媒体组，包含 {len(group_messages)} 条消息')
+                        finally:
+                            # 清理临时文件
+                            for file_path in media_files:
+                                try:
+                                    if os.path.exists(file_path):
+                                        os.remove(file_path)
+                                except Exception as cleanup_err:
+                                    logger.warning(f'清理临时文件失败: {cleanup_err}')
+                    else:
+                        skip_count += len(group_messages)
+                
+                # 单个媒体消息
+                elif message.media:
+                    # 下载媒体文件
+                    file_path = await message.download_media(
+                        os.path.join(TEMP_DIR, f'forward_{message.id}')
+                    )
+                    if file_path:
+                        try:
+                            await bot_client.send_file(
+                                target_entity,
+                                file_path,
+                                caption=message.message if message.message else None,  # 使用 message.message
+                                formatting_entities=message.entities
+                            )
+                            success_count += 1
+                            logger.info(f'成功转发媒体消息 {message.id}')
+                        finally:
+                            # 清理临时文件
+                            try:
+                                if os.path.exists(file_path):
+                                    os.remove(file_path)
+                            except Exception as cleanup_err:
+                                logger.warning(f'清理临时文件失败: {cleanup_err}')
+                    else:
+                        skip_count += 1
+                        logger.warning(f'下载媒体文件失败: {message.id}')
+                
+                # 纯文本消息
+                elif message.text:
+                    try:
+                        # 使用原始消息文本和实体，确保格式完全保持
+                        # message.message 是原始文本，message.entities 包含所有格式信息
+                        sent_message = await bot_client.send_message(
+                            target_entity,
+                            message.message,  # 原始文本
+                            formatting_entities=message.entities,  # 原始实体（包含链接、格式等）
+                            link_preview=True  # 启用链接预览
+                        )
+                        success_count += 1
+                        logger.info(f'成功转发文本消息 {message.id}')
+                    except Exception as text_err:
+                        logger.error(f'转发文本消息失败: {str(text_err)}')
+                        logger.error(traceback.format_exc())
+                        fail_count += 1
+                
+                else:
+                    skip_count += 1
+                    logger.warning(f'跳过空消息 {message.id}')
+                
+                # 每10条消息更新一次状态
+                if (idx + 1) % 10 == 0:
+                    try:
+                        await status_msg.edit(
+                            f'🚀 批量转发进行中...\n\n'
+                            f'源频道: {source_name}\n'
+                            f'目标频道: {target_name}\n'
+                            f'消息范围: {start_id} - {end_id}\n\n'
+                            f'✅ 成功: {success_count}\n'
+                            f'❌ 失败: {fail_count}\n'
+                            f'⏭ 跳过: {skip_count}\n'
+                            f'📊 进度: {idx + 1}/{len(messages_list)}'
+                        )
+                    except Exception as update_err:
+                        logger.warning(f'更新状态消息失败: {str(update_err)}')
+                
+                # 避免触发Telegram频率限制
+                await asyncio.sleep(0.5)
+                
+            except Exception as e:
+                logger.error(f'转发消息 {message.id} 时出错: {str(e)}')
+                logger.error(traceback.format_exc())
+                fail_count += 1
+        
+        # 发送完成提示
+        try:
+            await status_msg.edit(
+                f'✅ 批量转发完成！\n\n'
+                f'源频道: {source_name}\n'
+                f'目标频道: {target_name}\n'
+                f'消息范围: {start_id} - {end_id}\n\n'
+                f'✅ 成功: {success_count}\n'
+                f'❌ 失败: {fail_count}\n'
+                f'⏭ 跳过: {skip_count}'
+            )
+        except:
+            await respond_and_delete(event,
+                f'✅ 批量转发完成！\n\n'
+                f'✅ 成功: {success_count}\n'
+                f'❌ 失败: {fail_count}\n'
+                f'⏭ 跳过: {skip_count}'
+            )
+        
+    except Exception as e:
+        logger.error(f'批量转发时出错: {str(e)}')
+        logger.error(traceback.format_exc())
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, f'批量转发失败: {str(e)}')

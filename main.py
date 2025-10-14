@@ -174,6 +174,11 @@ async def register_bot_commands(bot):
             command='help',
             description='查看帮助'
         ),
+        # 批量转发
+        BotCommand(
+            command='forward',
+            description='批量转发指定范围的消息（保持原始格式）'
+        ),
         # 绑定和设置
         BotCommand(
             command='bind',
