@@ -10,14 +10,28 @@ logger = logging.getLogger(__name__)
 
 async def apply_replace_rules(rule, message_text):
     """应用替换规则到消息文本"""
+    logger.info(f'[替换规则] 开始应用替换规则')
+    logger.info(f'[替换规则] is_replace={rule.is_replace}, message_text存在={bool(message_text)}')
+    
     if not rule.is_replace or not message_text:
+        logger.info(f'[替换规则] 跳过替换（is_replace={rule.is_replace}, has_text={bool(message_text)}）')
         return message_text
     
     try:
-        for replace_rule in rule.replace_rules:
+        # 尝试访问替换规则
+        try:
+            replace_rules_count = len(rule.replace_rules) if rule.replace_rules else 0
+            logger.info(f'[替换规则] 规则数量: {replace_rules_count}')
+        except Exception as e:
+            logger.error(f'[替换规则] 无法访问替换规则列表: {str(e)}')
+            return message_text
+        
+        for idx, replace_rule in enumerate(rule.replace_rules):
+            logger.info(f'[替换规则] 处理第 {idx+1} 条规则: "{replace_rule.pattern}" -> "{replace_rule.content}"')
+            
             if replace_rule.pattern == '.*':
                 # 全文替换
-                logger.info(f'执行全文替换:\n原文: "{message_text}"\n替换为: "{replace_rule.content or ""}"')
+                logger.info(f'[替换规则] 执行全文替换:\n原文: "{message_text}"\n替换为: "{replace_rule.content or ""}"')
                 message_text = replace_rule.content or ''
                 break
             else:
@@ -30,13 +44,18 @@ async def apply_replace_rules(rule, message_text):
                         message_text
                     )
                     if old_text != message_text:
-                        logger.info(f'执行部分替换:\n原文: "{old_text}"\n替换规则: "{replace_rule.pattern}" -> "{replace_rule.content}"\n替换后: "{message_text}"')
+                        logger.info(f'[替换规则] ✅ 执行部分替换成功:\n原文: "{old_text}"\n替换规则: "{replace_rule.pattern}" -> "{replace_rule.content}"\n替换后: "{message_text}"')
+                    else:
+                        logger.info(f'[替换规则] ⚠️ 未匹配: "{replace_rule.pattern}" 在 "{old_text}" 中')
                 except re.error as e:
-                    logger.error(f'替换规则格式错误: {replace_rule.pattern}, 错误: {str(e)}')
+                    logger.error(f'[替换规则] 替换规则格式错误: {replace_rule.pattern}, 错误: {str(e)}')
         
+        logger.info(f'[替换规则] 最终结果: "{message_text}"')
         return message_text
     except Exception as e:
-        logger.error(f'应用替换规则时出错: {str(e)}')
+        logger.error(f'[替换规则] 应用替换规则时出错: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
         return message_text
 
 async def process_forward_rule(client, event, chat_id, rule):
@@ -47,11 +66,13 @@ async def process_forward_rule(client, event, chat_id, rule):
         logger.info(f'规则 ID: {rule.id} 已禁用，跳过处理')
         return
     
-    message_text = event.message.text or ''
+    # 获取消息文本，优先使用message字段（包含所有文本），其次是text字段
+    message_text = event.message.message if hasattr(event.message, 'message') and event.message.message else (event.message.text or '')
     check_message_text = message_text
     # 添加日志
     logger.info(f'处理规则 ID: {rule.id}')
     logger.info(f'消息内容: {message_text}')
+    logger.info(f'消息类型: message={hasattr(event.message, "message")}, text={event.message.text is not None}')
     logger.info(f'规则模式: {rule.forward_mode.value}')
 
 
