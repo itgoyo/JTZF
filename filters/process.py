@@ -1,6 +1,7 @@
 import logging
 from filters.filter_chain import FilterChain
 from filters.keyword_filter import KeywordFilter
+from filters.delete_filter import DeleteFilter
 from filters.replace_filter import ReplaceFilter
 from filters.ai_filter import AIFilter
 from filters.info_filter import InfoFilter
@@ -42,6 +43,9 @@ async def process_forward_rule(client, event, chat_id, rule):
     
     # 添加关键字过滤器（如果消息不匹配关键字，会中断处理链）
     filter_chain.add_filter(KeywordFilter())
+    
+    # 添加删除过滤器（删除指定关键字及其后的所有内容）
+    filter_chain.add_filter(DeleteFilter())
     
     # 添加替换过滤器
     filter_chain.add_filter(ReplaceFilter())

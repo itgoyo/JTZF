@@ -205,7 +205,7 @@ async def handle_user_message(event, user_client, bot_client):
                 # 直接使用过滤器模块中的process_forward_rule函数
                 await process_forward_rule(bot_client, event, str(chat_id), rule)
             else:
-                await user_handler.process_forward_rule(user_client, event, str(chat_id), rule)
+                await user_handler.process_forward_rule(user_client, event, str(chat_id), rule, session)
         
     except Exception as e:
         logger.error(f'处理用户消息时发生错误: {str(e)}')

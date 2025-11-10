@@ -1,4 +1,4 @@
-from models.models import ForwardMode
+from models.models import ForwardMode, DeleteRule
 import re
 import logging
 import asyncio
@@ -7,6 +7,49 @@ from utils.common import check_keywords, get_sender_info
 
 
 logger = logging.getLogger(__name__)
+
+async def apply_delete_rules(rule, message_text, session):
+    """应用删除规则到消息文本 - 删除关键字及其后的所有内容"""
+    logger.info(f'[删除规则] 开始应用删除规则')
+    logger.info(f'[删除规则] message_text存在={bool(message_text)}')
+    
+    if not message_text:
+        logger.info(f'[删除规则] 跳过删除（无文本内容）')
+        return message_text
+    
+    try:
+        # 获取所有删除规则
+        delete_rules = session.query(DeleteRule).filter_by(rule_id=rule.id).all()
+        delete_rules_count = len(delete_rules)
+        logger.info(f'[删除规则] 规则数量: {delete_rules_count}')
+        
+        if delete_rules_count == 0:
+            return message_text
+        
+        for idx, delete_rule in enumerate(delete_rules):
+            keyword = delete_rule.keyword
+            logger.info(f'[删除规则] 处理第 {idx+1} 条规则: 关键字="{keyword}"')
+            
+            # 查找关键字在文本中的位置
+            keyword_pos = message_text.find(keyword)
+            
+            if keyword_pos != -1:
+                # 找到关键字，删除关键字及其后的所有内容
+                old_text = message_text
+                message_text = message_text[:keyword_pos]
+                logger.info(f'[删除规则] ✅ 执行删除成功:\n原文: "{old_text}"\n关键字: "{keyword}"\n删除后: "{message_text}"')
+                # 找到第一个匹配的关键字后就停止，避免重复删除
+                break
+            else:
+                logger.info(f'[删除规则] ⚠️ 未找到关键字: "{keyword}"')
+        
+        logger.info(f'[删除规则] 最终结果: "{message_text}"')
+        return message_text
+    except Exception as e:
+        logger.error(f'[删除规则] 应用删除规则时出错: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return message_text
 
 async def apply_replace_rules(rule, message_text):
     """应用替换规则到消息文本"""
@@ -58,7 +101,7 @@ async def apply_replace_rules(rule, message_text):
         logger.error(traceback.format_exc())
         return message_text
 
-async def process_forward_rule(client, event, chat_id, rule):
+async def process_forward_rule(client, event, chat_id, rule, session=None):
     """处理转发规则（用户模式）"""
 
     
@@ -104,6 +147,11 @@ async def process_forward_rule(client, event, chat_id, rule):
             except Exception as e:
                 logger.error(f'访问替换规则时出错: {str(e)}')
                 replace_rules_count = 0
+            
+            # 先应用删除规则（如果有session的话）
+            if session and message_text:
+                message_text = await apply_delete_rules(rule, message_text, session)
+                logger.info(f'规则 {rule.id} - 删除规则应用后的文本: {message_text}')
             
             # 检查是否需要应用替换规则
             need_replace = rule.is_replace and replace_rules_count > 0 and message_text

@@ -242,6 +242,19 @@ async def register_bot_commands(bot):
             command='remove_replace',
             description='删除替换规则'
         ),
+        # 删除规则管理
+        BotCommand(
+            command='delete',
+            description='添加删除规则（删除关键字及其后所有内容）'
+        ),
+        BotCommand(
+            command='list_delete',
+            description='列出所有删除规则'
+        ),
+        BotCommand(
+            command='remove_delete',
+            description='删除删除规则'
+        ),
         # 导入导出功能
         BotCommand(
             command='export_keyword',
