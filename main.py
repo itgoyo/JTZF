@@ -77,6 +77,25 @@ def run_rss_server(host: str, port: int):
     )
 
 
+async def refresh_dialogs_keepalive(client, interval_seconds=600):
+    """
+    定期调用 get_dialogs() 以维持 Telegram 服务器对所有频道的 update 推送。
+    Telegram MTProto 对长期不活跃的 session 会停止推送某些频道的消息，
+    定期刷新 dialogs 可以重新激活，防止绑定数量多时后面的频道监听失效。
+    默认每 10 分钟刷新一次。
+    """
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            dialogs = await client.get_dialogs()
+            logger.info(f'[keepalive] 已刷新 dialogs，共 {len(dialogs)} 个对话，entity 缓存已更新')
+        except asyncio.CancelledError:
+            logger.info('[keepalive] dialogs 刷新任务已取消')
+            break
+        except Exception as e:
+            logger.warning(f'[keepalive] 刷新 dialogs 时出错: {e}，将在下次重试')
+
+
 async def start_clients():
     # 初始化 DBOperations
     global db_ops, scheduler, chat_updater
@@ -93,6 +112,15 @@ async def start_clients():
         me_bot = await bot_client.get_me()
         print(f'机器人客户端已启动: {me_bot.first_name} (@{me_bot.username})')
 
+        # 启动后立即刷新一次 dialogs，让 Telethon 缓存所有频道的 access_hash
+        # 这是解决绑定数量多时后面频道监听不生效的关键步骤
+        try:
+            logger.info('正在预热 entity 缓存，获取所有对话列表...')
+            dialogs = await user_client.get_dialogs()
+            logger.info(f'entity 缓存预热完成，共加载 {len(dialogs)} 个对话')
+        except Exception as e:
+            logger.warning(f'预热 entity 缓存时出错（不影响正常启动）: {e}')
+
         # 设置消息监听器
         await setup_listeners(user_client, bot_client)
 
@@ -106,6 +134,11 @@ async def start_clients():
         # 创建并启动聊天信息更新器
         chat_updater = ChatUpdater(user_client)
         await chat_updater.start()
+
+        # 启动 keepalive 任务，定期刷新 dialogs 维持所有频道的消息推送
+        keepalive_interval = int(os.getenv('DIALOGS_KEEPALIVE_INTERVAL', '600'))
+        asyncio.create_task(refresh_dialogs_keepalive(user_client, keepalive_interval))
+        logger.info(f'已启动 dialogs keepalive 任务，刷新间隔: {keepalive_interval}s')
 
         # 如果启用了 RSS 服务
         if os.getenv('RSS_ENABLED', '').lower() == 'true':

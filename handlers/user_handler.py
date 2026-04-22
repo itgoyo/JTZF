@@ -135,6 +135,13 @@ async def process_forward_rule(client, event, chat_id, rule, session=None):
         target_chat = rule.target_chat
         target_chat_id = int(target_chat.telegram_chat_id)
         
+        # 尝试获取完整的 entity（含 access_hash），避免 Telethon 因缓存缺失而无法解析 peer
+        try:
+            target_entity = await client.get_entity(target_chat_id)
+        except Exception as e:
+            logger.warning(f'规则 {rule.id} - 无法通过 get_entity 获取目标 {target_chat_id}，将直接使用整数ID: {e}')
+            target_entity = target_chat_id
+        
         try:
             # 添加调试日志
             logger.info(f'规则 {rule.id} - is_replace: {rule.is_replace}')
@@ -195,7 +202,7 @@ async def process_forward_rule(client, event, chat_id, rule, session=None):
                         if files:
                             # 发送媒体组，第一个文件带替换后的文本
                             await client.send_file(
-                                target_chat_id,
+                                target_entity,
                                 files,
                                 caption=replaced_text
                             )
@@ -213,7 +220,7 @@ async def process_forward_rule(client, event, chat_id, rule, session=None):
                         file_path = await event.message.download_media(os.path.join(os.getcwd(), 'temp'))
                         if file_path:
                             await client.send_file(
-                                target_chat_id,
+                                target_entity,
                                 file_path,
                                 caption=replaced_text
                             )
@@ -228,7 +235,7 @@ async def process_forward_rule(client, event, chat_id, rule, session=None):
                     else:
                         # 处理纯文本消息
                         await client.send_message(
-                            target_chat_id,
+                            target_entity,
                             replaced_text
                         )
                         logger.info(f'[用户] 文本消息已发送（应用替换规则）到: {target_chat.name} ({target_chat_id})')
@@ -257,7 +264,7 @@ async def process_forward_rule(client, event, chat_id, rule, session=None):
                 
                 # 一次性转发所有消息
                 await client.forward_messages(
-                    target_chat_id,
+                    target_entity,
                     messages,
                     event.chat_id
                 )
@@ -266,7 +273,7 @@ async def process_forward_rule(client, event, chat_id, rule, session=None):
             else:
                 # 处理单条消息
                 await client.forward_messages(
-                    target_chat_id,
+                    target_entity,
                     event.message.id,
                     event.chat_id
                 )

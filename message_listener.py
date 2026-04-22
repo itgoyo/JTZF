@@ -74,53 +74,55 @@ async def handle_user_message(event, user_client, bot_client):
     # logger.info("handle_user_message:开始处理用户消息")
     
     chat = await event.get_chat()
-    chat_id = abs(chat.id)
-    # logger.info(f"handle_user_message:获取到聊天ID: {chat_id}")
+    # db_chat_id 始终用于数据库查询，不加 100 前缀
+    db_chat_id = abs(chat.id)
+    # logger.info(f"handle_user_message:获取到聊天ID: {db_chat_id}")
 
     # 检查是否频道消息
+    # state_chat_id 仅用于状态管理查询，频道消息加 100 前缀与存储时保持一致
     if isinstance(event.chat, types.Channel) and state_manager.check_state():
         # logger.info("handle_user_message:检测到频道消息且存在状态")
         sender_id = os.getenv('USER_ID')
-        # 频道ID需要加上100前缀
-        chat_id = int(f"100{chat_id}")
-        # logger.info(f"handle_user_message:频道消息处理: sender_id={sender_id}, chat_id={chat_id}")
+        state_chat_id = int(f"100{db_chat_id}")
+        # logger.info(f"handle_user_message:频道消息处理: sender_id={sender_id}, state_chat_id={state_chat_id}")
     else:
         sender_id = event.sender_id
+        state_chat_id = db_chat_id
         # logger.info(f"handle_user_message:非频道消息处理: sender_id={sender_id}")
 
-    # 检查用户状态
-    current_state, message, state_type = state_manager.get_state(sender_id, chat_id)
+    # 检查用户状态（使用 state_chat_id）
+    current_state, message, state_type = state_manager.get_state(sender_id, state_chat_id)
     # logger.info(f'handle_user_message：当前是否有状态: {state_manager.check_state()}')
-    # logger.info(f"handle_user_message：当前用户ID和聊天ID: {sender_id}, {chat_id}")
+    # logger.info(f"handle_user_message：当前用户ID和聊天ID: {sender_id}, {state_chat_id}")
     # logger.info(f"handle_user_message：获取当前聊天窗口的用户状态: {current_state}")
     
     if current_state:
         # logger.info(f"检测到用户状态: {current_state}")
         # 处理提示词设置
         # logger.info("准备处理提示词设置")
-        if await handle_prompt_setting(event, bot_client, sender_id, chat_id, current_state, message):
+        if await handle_prompt_setting(event, bot_client, sender_id, state_chat_id, current_state, message):
             # logger.info("提示词设置处理完成，返回")
             return
         # logger.info("提示词设置处理未完成，继续执行")
 
-    # 检查是否是媒体组消息
+    # 检查是否是媒体组消息（使用 db_chat_id 保持一致性）
     if event.message.grouped_id:
         # 如果这个媒体组已经处理过，就跳过
-        group_key = f"{chat_id}:{event.message.grouped_id}"
+        group_key = f"{db_chat_id}:{event.message.grouped_id}"
         if group_key in PROCESSED_GROUPS:
             return
         # 标记这个媒体组为已处理
         PROCESSED_GROUPS.add(group_key)
         asyncio.create_task(clear_group_cache(group_key))
     
-    # 首先检查数据库中是否有该聊天的转发规则
+    # 首先检查数据库中是否有该聊天的转发规则（使用 db_chat_id，绝不加 100 前缀）
     session = get_session()
     # 防止对象在session关闭后过期
     session.expire_on_commit = False
     try:
-        # 查询源聊天
+        # 查询源聊天（用 db_chat_id）
         source_chat = session.query(Chat).filter(
-            Chat.telegram_chat_id == str(chat_id)
+            Chat.telegram_chat_id == str(db_chat_id)
         ).first()
         
         if not source_chat:
@@ -145,9 +147,9 @@ async def handle_user_message(event, user_client, bot_client):
         
         # 有转发规则时，才记录消息信息
         if event.message.grouped_id:
-            logger.info(f'[用户] 收到媒体组消息 来自聊天: {source_chat.name} ({chat_id}) 组ID: {event.message.grouped_id}')
+            logger.info(f'[用户] 收到媒体组消息 来自聊天: {source_chat.name} ({db_chat_id}) 组ID: {event.message.grouped_id}')
         else:
-            logger.info(f'[用户] 收到新消息 来自聊天: {source_chat.name} ({chat_id}) 内容: {event.message.text}')
+            logger.info(f'[用户] 收到新消息 来自聊天: {source_chat.name} ({db_chat_id}) 内容: {event.message.text}')
             
         # 添加日志：处理规则
         logger.info(f'找到 {len(rules)} 条转发规则')
@@ -203,9 +205,9 @@ async def handle_user_message(event, user_client, bot_client):
             
             if rule.use_bot:
                 # 直接使用过滤器模块中的process_forward_rule函数
-                await process_forward_rule(bot_client, event, str(chat_id), rule)
+                await process_forward_rule(bot_client, event, str(db_chat_id), rule)
             else:
-                await user_handler.process_forward_rule(user_client, event, str(chat_id), rule, session)
+                await user_handler.process_forward_rule(user_client, event, str(db_chat_id), rule, session)
         
     except Exception as e:
         logger.error(f'处理用户消息时发生错误: {str(e)}')
@@ -224,18 +226,19 @@ async def handle_bot_message(event, bot_client):
         # logger.info(f"handle_bot_message:获取到聊天ID: {chat_id}")
 
         # 检查是否频道消息
+        # state_chat_id 仅用于状态管理，频道消息加 100 前缀
         if isinstance(event.chat, types.Channel) and state_manager.check_state():
             # logger.info("handle_bot_message:检测到频道消息且存在状态")
             sender_id = os.getenv('USER_ID')
-            # 频道ID需要加上100前缀
-            chat_id = int(f"100{chat_id}")
-            # logger.info(f"handle_bot_message:频道消息处理: sender_id={sender_id}, chat_id={chat_id}")
+            state_chat_id = int(f"100{chat_id}")
+            # logger.info(f"handle_bot_message:频道消息处理: sender_id={sender_id}, state_chat_id={state_chat_id}")
         else:
             sender_id = event.sender_id
+            state_chat_id = chat_id
             # logger.info(f"handle_bot_message:非频道消息处理: sender_id={sender_id}")
 
         # 检查用户状态
-        current_state, message, state_type = state_manager.get_state(sender_id, chat_id)
+        current_state, message, state_type = state_manager.get_state(sender_id, state_chat_id)
         # logger.info(f'handle_bot_message：当前是否有状态: {state_manager.check_state()}')
         # logger.info(f"handle_bot_message：当前用户ID和聊天ID: {sender_id}, {chat_id}")
         # logger.info(f"handle_bot_message：获取当前聊天窗口的用户状态: {current_state}")
@@ -244,7 +247,7 @@ async def handle_bot_message(event, bot_client):
         
         # 处理提示词设置
         if current_state:
-            await handle_prompt_setting(event, bot_client, sender_id, chat_id, current_state, message)
+            await handle_prompt_setting(event, bot_client, sender_id, state_chat_id, current_state, message)
             return
 
         # 如果没有特殊状态，则处理常规命令
