@@ -493,7 +493,7 @@ async def handle_delete_command(event, parts):
     message_text = event.message.text
     if len(message_text.split(None, 1)) < 2:
         await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
-        await reply_and_delete(event,'用法: /delete <关键字1> [关键字2] ...\n例如:\n/delete 订阅频道\n/delete "订阅东南亚大事件频道" "更多内容"')
+        await reply_and_delete(event,'用法: /deleteend <关键字1> [关键字2] ...\n例如:\n/deleteend 订阅频道\n/deleteend "订阅东南亚大事件频道" "更多内容"')
         return
 
     # 分离命令和参数部分
@@ -1117,7 +1117,7 @@ async def handle_help_command(event, command):
         "/copy_replace(/crp) <规则ID> - 复制指定规则的替换规则到当前规则\n\n"
 
         "**删除规则管理**\n"
-        "/delete(/d) <关键字1> [关键字2] ... - 添加删除规则（删除关键字及其后所有内容）\n"
+        "/deleteend(/d) <关键字1> [关键字2] ... - 添加删除规则（删除关键字及其后所有内容）\n"
         "/list_delete(/ld) - 列出所有删除规则\n"
         "/remove_delete(/rd) <序号> - 删除删除规则\n\n"
 

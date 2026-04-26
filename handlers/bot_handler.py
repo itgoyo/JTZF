@@ -64,7 +64,7 @@ async def handle_command(client, event):
         'ar': lambda: handle_add_command(event, 'add_regex', parts),
         'replace': lambda: handle_replace_command(event, parts),
         'r': lambda: handle_replace_command(event, parts),
-        'delete': lambda: handle_delete_command(event, parts),
+        'deleteend': lambda: handle_delete_command(event, parts),
         'd': lambda: handle_delete_command(event, parts),
         'append': lambda: handle_append_command(event, parts),
         'ap': lambda: handle_append_command(event, parts),

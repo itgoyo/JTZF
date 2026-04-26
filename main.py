@@ -277,7 +277,7 @@ async def register_bot_commands(bot):
         ),
         # 删除规则管理
         BotCommand(
-            command='delete',
+            command='deleteend',
             description='添加删除规则（删除关键字及其后所有内容）'
         ),
         BotCommand(
