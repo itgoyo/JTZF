@@ -212,6 +212,11 @@ async def register_bot_commands(bot):
             command='forward',
             description='批量转发指定范围的消息（保持原始格式）'
         ),
+        # 查看消息原始内容
+        BotCommand(
+            command='source',
+            description='查看消息原始内容（回复消息或提供链接）'
+        ),
         # 绑定和设置
         BotCommand(
             command='bind',

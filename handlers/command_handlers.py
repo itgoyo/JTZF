@@ -1157,6 +1157,127 @@ async def handle_help_command(event, command):
     await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
     await reply_and_delete(event,help_text, parse_mode='markdown')
 
+
+def _build_source_report(target_message) -> str:
+    """构建消息原始内容报告文本"""
+    from telethon.extensions import html as tl_html, markdown as tl_markdown
+
+    lines = ['📄 **消息原始内容**', '']
+
+    raw_text = target_message.raw_text or ''
+    entities = target_message.entities or []
+
+    # ── 1. 纯文本（无任何格式）──
+    lines.append('**① 纯文本（用于 /deleteend 匹配）：**')
+    if raw_text:
+        escaped = raw_text.replace('`', "'")
+        lines.append(f'```\n{escaped}\n```')
+    else:
+        lines.append('（无文本内容）')
+    lines.append('')
+
+    # ── 2. HTML 格式还原 ──
+    if raw_text and entities:
+        try:
+            html_text = tl_html.unparse(raw_text, entities)
+            escaped_html = html_text.replace('`', "'")
+            lines.append('**② HTML 格式（原始超链接结构）：**')
+            lines.append(f'```\n{escaped_html}\n```')
+        except Exception as e:
+            lines.append(f'**② HTML 格式：** 解析失败 ({e})')
+        lines.append('')
+
+        # ── 3. Markdown 格式还原 ──
+        try:
+            md_text = tl_markdown.unparse(raw_text, entities)
+            escaped_md = md_text.replace('`', "'")
+            lines.append('**③ Markdown 格式：**')
+            lines.append(f'```\n{escaped_md}\n```')
+        except Exception as e:
+            lines.append(f'**③ Markdown 格式：** 解析失败 ({e})')
+        lines.append('')
+    elif not entities:
+        lines.append('**② 格式信息：** 纯文本，无任何格式实体')
+        lines.append('')
+
+    # ── 4. 媒体 & 内联按钮 ──
+    media = target_message.media
+    lines.append(f'**媒体类型：** {type(media).__name__}' if media else '**媒体：** 无')
+
+    reply_markup = target_message.reply_markup
+    if reply_markup and hasattr(reply_markup, 'rows') and reply_markup.rows:
+        lines.append('')
+        lines.append('**内联按钮：**')
+        for row in reply_markup.rows:
+            for btn in row.buttons:
+                btn_text = getattr(btn, 'text', '')
+                btn_url = getattr(btn, 'url', '')
+                if btn_url:
+                    lines.append(f'  • {btn_text}  →  {btn_url}')
+                else:
+                    lines.append(f'  • {btn_text}')
+
+    return '\n'.join(lines)
+
+
+async def handle_source_command(event, parts):
+    """处理 source 命令 - 展示消息的原始内容结构"""
+    import re
+
+    replied = await event.message.get_reply_message()
+    target_message = None
+
+    if replied:
+        # 方式1：回复某条消息后发 /source
+        target_message = replied
+    elif len(parts) >= 2:
+        # 方式2：/source <链接>
+        link = parts[1]
+        match = re.match(r'https?://t\.me/(?:c/(\d+)|([^/]+))/(\d+)', link)
+        if not match:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, '链接格式不正确\n支持格式：\nhttps://t.me/channel/123\nhttps://t.me/c/1234567890/123')
+            return
+        try:
+            message_id = int(match.group(3))
+            main = await get_main_module()
+            user_client = main.user_client
+            if match.group(1):
+                chat_id = int('-100' + match.group(1))
+            else:
+                entity = await user_client.get_entity(match.group(2))
+                chat_id = entity.id
+            target_message = await user_client.get_messages(chat_id, ids=message_id)
+        except Exception as e:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, f'获取消息失败: {str(e)}')
+            return
+    else:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, '用法:\n1. 回复一条消息后发 /source\n2. /source <消息链接>')
+        return
+
+    if not target_message:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, '无法获取目标消息')
+        return
+
+    result = _build_source_report(target_message)
+    await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+    await reply_and_delete(event, result, parse_mode='markdown')
+
+
+async def handle_forwarded_message_source(event) -> bool:
+    """当管理员直接将消息转发给 Bot 时，自动展示该消息的原始内容。
+    返回 True 表示已处理，False 表示不是转发消息。"""
+    if not event.message.fwd_from:
+        return False
+
+    result = _build_source_report(event.message)
+    await reply_and_delete(event, result, parse_mode='markdown')
+    return True
+
+
 async def handle_export_keyword_command(event, command):
     """处理 export_keyword 命令"""
     session = get_session()

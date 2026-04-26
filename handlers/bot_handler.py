@@ -35,8 +35,12 @@ async def handle_command(client, event):
     user_id = int(user_id)
     
 
-    # 链接转发功能
+    # 链接转发功能 / 转发消息原始内容展示
     if not message.text.startswith('/') and chat_id == user_id:
+        # 如果是转发来的消息，自动展示原始内容
+        if message.fwd_from:
+            await handle_forwarded_message_source(event)
+            return
         # 检查是否是 Telegram 消息链接且是用户自己的消息
         logger.info(f'进入链接转发功能：{message.text}')
         if 't.me/' in message.text:
@@ -141,6 +145,8 @@ async def handle_command(client, event):
         'dru': lambda: handle_delete_rss_user_command(event, command, parts),
         'forward': lambda: handle_forward_command(event, command, parts),
         'f': lambda: handle_forward_command(event, 'forward', parts),
+        'source': lambda: handle_source_command(event, parts),
+        'src': lambda: handle_source_command(event, parts),
     }
 
     # 执行对应的命令处理器
