@@ -63,6 +63,9 @@ class MessageContext:
         
         # 评论区链接
         self.comment_link = None
+
+        # /append 指定的渲染模式（None=跟随规则）
+        self.append_parse_mode = None
         
     def clone(self):
         """创建上下文的副本"""

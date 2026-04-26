@@ -3,6 +3,7 @@ from filters.filter_chain import FilterChain
 from filters.keyword_filter import KeywordFilter
 from filters.delete_filter import DeleteFilter
 from filters.replace_filter import ReplaceFilter
+from filters.append_filter import AppendFilter
 from filters.ai_filter import AIFilter
 from filters.info_filter import InfoFilter
 from filters.media_filter import MediaFilter
@@ -11,6 +12,7 @@ from filters.delete_original_filter import DeleteOriginalFilter
 from filters.delay_filter import DelayFilter
 from filters.edit_filter import EditFilter
 from filters.comment_button_filter import CommentButtonFilter
+from filters.custom_buttons_filter import CustomButtonsFilter
 from filters.init_filter import InitFilter
 from filters.reply_filter import ReplyFilter
 from filters.rss_filter import RSSFilter
@@ -50,6 +52,9 @@ async def process_forward_rule(client, event, chat_id, rule):
     # 添加替换过滤器
     filter_chain.add_filter(ReplaceFilter())
 
+    # 添加追加文本过滤器（/append）
+    filter_chain.add_filter(AppendFilter())
+
     # 添加媒体过滤器（处理媒体内容）
     filter_chain.add_filter(MediaFilter())
     
@@ -61,6 +66,9 @@ async def process_forward_rule(client, event, chat_id, rule):
     
     # 添加评论区按钮过滤器
     filter_chain.add_filter(CommentButtonFilter())
+
+    # 添加自定义广告按钮过滤器（/buttons）
+    filter_chain.add_filter(CustomButtonsFilter())
 
     # 添加RSS过滤器
     filter_chain.add_filter(RSSFilter())

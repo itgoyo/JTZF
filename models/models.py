@@ -88,6 +88,8 @@ class ForwardRule(Base):
     keywords = relationship('Keyword', back_populates='rule')
     replace_rules = relationship('ReplaceRule', back_populates='rule', cascade="all, delete-orphan")
     delete_rules = relationship('DeleteRule', back_populates='rule', cascade="all, delete-orphan")
+    append_rule = relationship('AppendRule', uselist=False, back_populates='rule', cascade="all, delete-orphan")
+    button_rule = relationship('ButtonRule', uselist=False, back_populates='rule', cascade="all, delete-orphan")
     media_types = relationship('MediaTypes', uselist=False, back_populates='rule', cascade="all, delete-orphan")
     media_extensions = relationship('MediaExtensions', back_populates='rule', cascade="all, delete-orphan")
     rss_config = relationship('RSSConfig', uselist=False, back_populates='rule', cascade="all, delete-orphan")
@@ -141,6 +143,29 @@ class DeleteRule(Base):
     __table_args__ = (
         UniqueConstraint('rule_id', 'keyword', name='unique_rule_delete_keyword'),
     )
+
+class AppendRule(Base):
+    __tablename__ = 'append_rules'
+
+    id = Column(Integer, primary_key=True)
+    rule_id = Column(Integer, ForeignKey('forward_rules.id'), nullable=False, unique=True)
+    content = Column(String, nullable=True)  # 追加文本
+    parse_mode = Column(String, nullable=True)  # Markdown / HTML / None(跟随规则)
+    enabled = Column(Boolean, default=False)
+
+    # 关系
+    rule = relationship('ForwardRule', back_populates='append_rule')
+
+class ButtonRule(Base):
+    __tablename__ = 'button_rules'
+
+    id = Column(Integer, primary_key=True)
+    rule_id = Column(Integer, ForeignKey('forward_rules.id'), nullable=False, unique=True)
+    buttons_json = Column(String, nullable=True)  # [[{"text":"..","url":".."}], ...]
+    enabled = Column(Boolean, default=False)
+
+    # 关系
+    rule = relationship('ForwardRule', back_populates='button_rule')
 
 class MediaTypes(Base):
     __tablename__ = 'media_types'
@@ -287,6 +312,16 @@ def migrate_db(engine):
             if 'push_configs' not in existing_tables:
                 logging.info("创建push_configs表...")
                 PushConfig.__table__.create(engine)
+
+            # 如果append_rules表不存在，创建表
+            if 'append_rules' not in existing_tables:
+                logging.info("创建append_rules表...")
+                AppendRule.__table__.create(engine)
+
+            # 如果button_rules表不存在，创建表
+            if 'button_rules' not in existing_tables:
+                logging.info("创建button_rules表...")
+                ButtonRule.__table__.create(engine)
    
                 
             # 如果media_types表不存在，创建表

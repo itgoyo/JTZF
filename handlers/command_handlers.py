@@ -2,7 +2,7 @@ from sqlalchemy.exc import IntegrityError
 from telethon import Button
 from models.models import MediaTypes, MediaExtensions
 from enums.enums import AddMode, ForwardMode
-from models.models import get_session, Keyword, ReplaceRule, DeleteRule, User, RuleSync
+from models.models import get_session, Keyword, ReplaceRule, DeleteRule, AppendRule, ButtonRule, User, RuleSync
 from utils.common import *
 from utils.media import *
 from handlers.list_handlers import *
@@ -20,6 +20,7 @@ import models.models as models
 from utils.auto_delete import respond_and_delete,reply_and_delete,async_delete_user_message
 from utils.common import get_bot_client
 from handlers.button.settings_manager import create_settings_text, create_buttons
+from utils.append_button_utils import parse_append_args, parse_buttons_input, serialize_button_rows
 
 logger = logging.getLogger(__name__)
 
@@ -566,6 +567,171 @@ async def handle_delete_command(event, parts):
     finally:
         session.close()
 
+async def handle_append_command(event, parts):
+    """处理 /append：追加文本（支持 markdown/html）"""
+    message_text = event.message.text or ""
+    if len(message_text.split(None, 1)) < 2:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(
+            event,
+            '用法:\n'
+            '/append <内容>\n'
+            '/append markdown <内容>\n'
+            '/append html <内容>\n'
+            '/append_off 关闭追加'
+        )
+        return
+
+    _, args_text = message_text.split(None, 1)
+    parse_mode, content = parse_append_args(args_text)
+    if not content:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, '追加内容不能为空')
+        return
+
+    session = get_session()
+    try:
+        rule_info = await get_current_rule(session, event)
+        if not rule_info:
+            return
+
+        rule, source_chat = rule_info
+        append_rule = session.query(AppendRule).filter_by(rule_id=rule.id).first()
+        if not append_rule:
+            append_rule = AppendRule(rule_id=rule.id)
+            session.add(append_rule)
+
+        append_rule.content = content
+        append_rule.parse_mode = parse_mode  # None=跟随规则
+        append_rule.enabled = True
+        session.commit()
+
+        mode_text = parse_mode or f'跟随规则({rule.message_mode.value})'
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(
+            event,
+            f'✅ 已设置追加文本\n规则: 来自 {source_chat.name}\n渲染模式: {mode_text}\n\n预览:\n{content}'
+        )
+    except Exception as e:
+        session.rollback()
+        logger.error(f'设置 append 时出错: {e}\n{traceback.format_exc()}')
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, '设置 append 时出错，请检查日志')
+    finally:
+        session.close()
+
+async def handle_append_off_command(event):
+    """关闭 /append"""
+    session = get_session()
+    try:
+        rule_info = await get_current_rule(session, event)
+        if not rule_info:
+            return
+        rule, source_chat = rule_info
+
+        append_rule = session.query(AppendRule).filter_by(rule_id=rule.id).first()
+        if append_rule:
+            append_rule.enabled = False
+            append_rule.content = None
+            append_rule.parse_mode = None
+            session.commit()
+
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, f'✅ 已关闭追加文本\n规则: 来自 {source_chat.name}')
+    except Exception as e:
+        session.rollback()
+        logger.error(f'关闭 append 时出错: {e}')
+        await reply_and_delete(event, '关闭 append 时出错，请检查日志')
+    finally:
+        session.close()
+
+async def handle_buttons_command(event, parts):
+    """处理 /buttons：设置帖子末尾按钮广告"""
+    message_text = event.message.text or ""
+    if len(message_text.split(None, 1)) < 2:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(
+            event,
+            '用法:\n'
+            '/buttons <按钮文本 - 链接>[&&按钮文本 - 链接]\n'
+            '支持多行，每行一排按钮\n\n'
+            '示例:\n'
+            '/buttons 官网 - https://example.com && 购买 - https://t.me/abc\n'
+            '文档 - https://docs.example.com\n\n'
+            '/buttons_off 关闭按钮广告'
+        )
+        return
+
+    _, args_text = message_text.split(None, 1)
+    try:
+        rows = parse_buttons_input(args_text)
+        if not rows:
+            raise ValueError('未解析到有效按钮')
+    except Exception as e:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, f'按钮格式错误: {e}')
+        return
+
+    session = get_session()
+    try:
+        rule_info = await get_current_rule(session, event)
+        if not rule_info:
+            return
+
+        rule, source_chat = rule_info
+        button_rule = session.query(ButtonRule).filter_by(rule_id=rule.id).first()
+        if not button_rule:
+            button_rule = ButtonRule(rule_id=rule.id)
+            session.add(button_rule)
+
+        button_rule.buttons_json = serialize_button_rows(rows)
+        button_rule.enabled = True
+        session.commit()
+
+        preview_lines = []
+        idx = 1
+        for row in rows:
+            for btn in row:
+                preview_lines.append(f'{idx}. {btn["text"]} - {btn["url"]}')
+                idx += 1
+
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(
+            event,
+            f'✅ 已设置按钮广告\n规则: 来自 {source_chat.name}\n按钮数量: {idx-1}\n\n' + '\n'.join(preview_lines)
+        )
+    except Exception as e:
+        session.rollback()
+        logger.error(f'设置 buttons 时出错: {e}\n{traceback.format_exc()}')
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, '设置 buttons 时出错，请检查日志')
+    finally:
+        session.close()
+
+async def handle_buttons_off_command(event):
+    """关闭 /buttons"""
+    session = get_session()
+    try:
+        rule_info = await get_current_rule(session, event)
+        if not rule_info:
+            return
+        rule, source_chat = rule_info
+
+        button_rule = session.query(ButtonRule).filter_by(rule_id=rule.id).first()
+        if button_rule:
+            button_rule.enabled = False
+            button_rule.buttons_json = None
+            session.commit()
+
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, f'✅ 已关闭按钮广告\n规则: 来自 {source_chat.name}')
+    except Exception as e:
+        session.rollback()
+        logger.error(f'关闭 buttons 时出错: {e}')
+        await reply_and_delete(event, '关闭 buttons 时出错，请检查日志')
+    finally:
+        session.close()
+
 async def handle_list_keyword_command(event):
     """处理 list_keyword 命令"""
     session = get_session()
@@ -954,6 +1120,12 @@ async def handle_help_command(event, command):
         "/delete(/d) <关键字1> [关键字2] ... - 添加删除规则（删除关键字及其后所有内容）\n"
         "/list_delete(/ld) - 列出所有删除规则\n"
         "/remove_delete(/rd) <序号> - 删除删除规则\n\n"
+
+        "**追加与按钮广告**\n"
+        "/append(/ap) [markdown|md|html|auto] <内容> - 在转发末尾追加文本\n"
+        "/append_off(/apo) - 关闭追加文本\n"
+        "/buttons(/bt) <文本 - 链接>[&&文本 - 链接] - 在转发末尾追加按钮（支持多行）\n"
+        "/buttons_off(/bto) - 关闭按钮广告\n\n"
 
         "**导入导出**\n"
         "/export_keyword(/ek) - 导出当前规则的关键字\n"

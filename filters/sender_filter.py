@@ -65,8 +65,8 @@ class SenderFilter(BaseFilter):
         except Exception as e:
             logger.warning(f'获取目标聊天实体时出错: {str(e)}')
         
-        # 设置消息格式
-        parse_mode = rule.message_mode.value  # 使用枚举的值（字符串）
+        # 设置消息格式（append 可覆盖渲染模式）
+        parse_mode = context.append_parse_mode or rule.message_mode.value
         logger.info(f'使用消息格式: {parse_mode}')
         
         try:
@@ -159,9 +159,10 @@ class SenderFilter(BaseFilter):
                 caption_text += context.time_info + context.original_link
                 
                 # 作为一个组发送所有文件
-                sent_messages = await client.send_file(
-                    target_chat_id,
-                    files,
+                sent_messages = await self._send_file_with_button_fallback(
+                    client=client,
+                    target_chat_id=target_chat_id,
+                    files=files,
                     caption=caption_text,
                     parse_mode=parse_mode,
                     buttons=context.buttons,
@@ -214,12 +215,13 @@ class SenderFilter(BaseFilter):
             
             text_to_send += original_link
                 
-            await client.send_message(
-                target_chat_id,
-                text_to_send,
+            await self._send_message_with_button_fallback(
+                client=client,
+                target_chat_id=target_chat_id,
+                message_text=text_to_send,
                 parse_mode=parse_mode,
                 link_preview=True,
-                buttons=context.buttons
+                buttons=context.buttons,
             )
             logger.info(f'媒体文件超过大小限制，仅转发文本')
             return
@@ -238,9 +240,10 @@ class SenderFilter(BaseFilter):
                     context.original_link
                 )
                 
-                await client.send_file(
-                    target_chat_id,
-                    file_path,
+                await self._send_file_with_button_fallback(
+                    client=client,
+                    target_chat_id=target_chat_id,
+                    files=file_path,
                     caption=caption,
                     parse_mode=parse_mode,
                     buttons=context.buttons,
@@ -284,11 +287,56 @@ class SenderFilter(BaseFilter):
         # 组合消息文本
         message_text = context.sender_info + context.message_text + context.time_info + context.original_link
         
-        await client.send_message(
-            target_chat_id,
-            str(message_text),
+        await self._send_message_with_button_fallback(
+            client=client,
+            target_chat_id=target_chat_id,
+            message_text=str(message_text),
             parse_mode=parse_mode,
             link_preview=link_preview,
-            buttons=context.buttons
+            buttons=context.buttons,
         )
         logger.info(f'{"带预览的" if link_preview else "无预览的"}文本消息已发送') 
+
+    async def _send_message_with_button_fallback(self, client, target_chat_id, message_text, parse_mode, link_preview, buttons):
+        try:
+            return await client.send_message(
+                target_chat_id,
+                message_text,
+                parse_mode=parse_mode,
+                link_preview=link_preview,
+                buttons=buttons
+            )
+        except Exception as e:
+            if buttons:
+                logger.warning(f'带按钮发送文本失败，降级为无按钮发送: {e}')
+                return await client.send_message(
+                    target_chat_id,
+                    message_text,
+                    parse_mode=parse_mode,
+                    link_preview=link_preview,
+                    buttons=None
+                )
+            raise
+
+    async def _send_file_with_button_fallback(self, client, target_chat_id, files, caption, parse_mode, buttons, link_preview):
+        try:
+            return await client.send_file(
+                target_chat_id,
+                files,
+                caption=caption,
+                parse_mode=parse_mode,
+                buttons=buttons,
+                link_preview=link_preview,
+            )
+        except Exception as e:
+            if buttons:
+                logger.warning(f'带按钮发送媒体失败，降级为无按钮发送: {e}')
+                return await client.send_file(
+                    target_chat_id,
+                    files,
+                    caption=caption,
+                    parse_mode=parse_mode,
+                    buttons=None,
+                    link_preview=link_preview,
+                )
+            raise

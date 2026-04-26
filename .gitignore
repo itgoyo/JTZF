@@ -1,35 +1,69 @@
-# 环境变量文件
+# ===== 隐私 / 敏感信息 =====
 .env
+.env.local
+.env.*.local
+*.env
 
-# 数据库文件
+# ===== 数据库文件 =====
 *.db
+*.db-shm
+*.db-wal
+*.db1
+db/
 
-# Python
+# ===== Telegram Session 文件（含账号登录态，绝对不能泄露）=====
+*.session
+*.session-journal
+sessions/
+
+# ===== Python 编译缓存 =====
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
+*.pyd
+.Python
 
-# 虚拟环境
+# ===== 虚拟环境 =====
 venv/
+.venv/
+.venv312/
 env/
 ENV/
+.python-version
 
-# Telethon session 文件
-*.session
-*.session-journal 
-/.idea
-/example
-/config
-/ufb/.idea
+# ===== 运行时 / 临时文件 =====
+temp/
+/tmp/
+*.log
+logs/
+process.txt
+
+# ===== RSS 运行时数据 =====
+/rss/media/
+/rss/data/
+
+# ===== IDE / 编辑器 =====
+.idea/
+/ufb/.idea/
+.vscode/
+*.swp
+*.swo
+*.orig
+
+# ===== macOS =====
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# ===== 本地配置 / 开发残留 =====
 ufb/config/config.json
-/images/logo/svg
-/test
-db/forward.db1
+/images/logo/svg/
+/example/
+/test/
 handlers/bot_handler copy.py
-/temp
 使用场景示例.md
-/rss/media
-/rss/data
 
-/logs
-logs/telegram_forwarder.log
+# ===== Docker 生成产物 =====
+*.pid
