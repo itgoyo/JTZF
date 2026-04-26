@@ -60,6 +60,12 @@ async def handle_prompt_setting(event, client, sender_id, chat_id, current_state
         rule_id = current_state.split(":")[1]
         logger.info(f"检测到添加推送频道,规则ID:{rule_id}")
         return await handle_add_push_channel(event, client, sender_id, chat_id, rule_id, message)
+    elif current_state.startswith("set_ai_tag_max_count:"):
+        rule_id = current_state.split(":")[1]
+        return await handle_ai_tag_number_input(event, client, sender_id, chat_id, rule_id, "ai_tag_max_count", "最多标签数", 1, 10, message)
+    elif current_state.startswith("set_ai_tag_min_length:"):
+        rule_id = current_state.split(":")[1]
+        return await handle_ai_tag_number_input(event, client, sender_id, chat_id, rule_id, "ai_tag_min_length", "最短触发字数", 1, 10000, message)
     else:
         logger.info(f"未知的状态类型:{current_state}")
         return False
@@ -156,6 +162,52 @@ async def handle_prompt_setting(event, client, sender_id, chat_id, current_state
         session.close()
         logger.info("数据库会话已关闭")
     return True
+
+
+async def handle_ai_tag_number_input(event, client, sender_id, chat_id, rule_id, field_name, display_name, min_val, max_val, message):
+    """处理 AI 标签数字输入（max_count / min_length）"""
+    text = event.message.text.strip()
+    try:
+        value = int(text)
+        if not (min_val <= value <= max_val):
+            raise ValueError
+    except ValueError:
+        await client.send_message(chat_id, f'输入无效，请输入 {min_val}-{max_val} 之间的整数')
+        return False
+
+    session = get_session()
+    try:
+        rule = session.query(ForwardRule).get(int(rule_id))
+        if not rule:
+            logger.warning(f'未找到规则ID:{rule_id}')
+            return False
+        setattr(rule, field_name, value)
+        session.commit()
+        state_manager.clear_state(sender_id, chat_id)
+        logger.info(f'已更新规则 {rule_id} 的 {field_name} 为 {value}')
+
+        bot_client = await get_bot_client()
+        from handlers.button.button_helpers import create_ai_tag_settings_buttons
+        from handlers.button.callback.ai_tag_callback import _get_ai_tag_text
+
+        try:
+            await async_delete_user_message(bot_client, event.message.chat_id, event.message.id, 0)
+        except Exception as e:
+            logger.error(f'删除用户消息失败: {e}')
+
+        await message.delete()
+        await client.send_message(
+            chat_id,
+            _get_ai_tag_text(rule),
+            buttons=await create_ai_tag_settings_buttons(rule)
+        )
+        return True
+    except Exception as e:
+        logger.error(f'处理AI标签数字输入时出错: {e}', exc_info=True)
+        return False
+    finally:
+        session.close()
+
 
 async def handle_add_push_channel(event, client, sender_id, chat_id, rule_id, message):
     """处理添加推送频道的逻辑"""

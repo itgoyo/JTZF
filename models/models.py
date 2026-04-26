@@ -70,6 +70,11 @@ class ForwardRule(Base):
     summary_prompt = Column(String, nullable=True)  # AI总结的prompt
     is_keyword_after_ai = Column(Boolean, default=False) # AI处理后是否再次执行关键字过滤
     is_top_summary = Column(Boolean, default=True) # 是否顶置总结消息
+    # AI标签相关字段
+    enable_ai_tag = Column(Boolean, default=False)  # 是否启用AI自动打标签
+    ai_tag_model = Column(String, nullable=True)  # AI标签使用的模型（复用现有模型列表）
+    ai_tag_max_count = Column(Integer, default=3)  # 最多生成标签数量
+    ai_tag_min_length = Column(Integer, default=100)  # 触发AI打标签的最短字符数
     enable_delay = Column(Boolean, default=False)  # 是否启用延迟处理
     delay_seconds = Column(Integer, default=5)  # 延迟处理秒数
     # RSS相关字段
@@ -416,6 +421,10 @@ def migrate_db(engine):
         'enable_only_push': 'ALTER TABLE forward_rules ADD COLUMN enable_only_push BOOLEAN DEFAULT FALSE',
         'media_allow_text': 'ALTER TABLE forward_rules ADD COLUMN media_allow_text BOOLEAN DEFAULT FALSE',
         'enable_ai_upload_image': 'ALTER TABLE forward_rules ADD COLUMN enable_ai_upload_image BOOLEAN DEFAULT FALSE',
+        'enable_ai_tag': 'ALTER TABLE forward_rules ADD COLUMN enable_ai_tag BOOLEAN DEFAULT FALSE',
+        'ai_tag_model': 'ALTER TABLE forward_rules ADD COLUMN ai_tag_model VARCHAR DEFAULT NULL',
+        'ai_tag_max_count': 'ALTER TABLE forward_rules ADD COLUMN ai_tag_max_count INTEGER DEFAULT 3',
+        'ai_tag_min_length': 'ALTER TABLE forward_rules ADD COLUMN ai_tag_min_length INTEGER DEFAULT 100',
     }
 
     keywords_new_columns = {

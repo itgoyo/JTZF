@@ -4,6 +4,7 @@ from handlers.button.settings_manager import create_settings_text, create_button
 from models.models import Chat, ReplaceRule, Keyword,get_session, ForwardRule, RuleSync
 from telethon import Button
 from handlers.button.callback.ai_callback import *
+from handlers.button.callback.ai_tag_callback import *
 from handlers.button.callback.media_callback import *
 from handlers.button.callback.other_callback import *
 from handlers.button.callback.push_callback import *
@@ -642,6 +643,14 @@ CALLBACK_HANDLERS = {
     'set_sync_rule': callback_set_sync_rule,
     'toggle_rule_sync': callback_toggle_rule_sync,
     'sync_rule_page': callback_sync_rule_page,
+    # AI标签设置
+    'ai_tag_settings': callback_ai_tag_settings,
+    'toggle_ai_tag': callback_toggle_ai_tag,
+    'change_ai_tag_model': callback_change_ai_tag_model,
+    'select_ai_tag_model': callback_select_ai_tag_model,
+    'set_ai_tag_max_count': callback_set_ai_tag_max_count,
+    'set_ai_tag_min_length': callback_set_ai_tag_min_length,
+    'cancel_ai_tag_input': callback_cancel_ai_tag_input,
     # AI设置
     'set_summary_prompt': callback_set_summary_prompt,
     'set_ai_prompt': callback_set_ai_prompt,

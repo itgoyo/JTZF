@@ -1,7 +1,7 @@
 from telethon import Button
 from utils.constants import *
-from utils.settings import load_summary_times, load_ai_models, load_delay_times, load_max_media_size, load_media_extensions
-from handlers.button.settings_manager import AI_SETTINGS, AI_MODELS, MEDIA_SETTINGS,OTHER_SETTINGS, PUSH_SETTINGS
+from utils.settings import load_summary_times, load_ai_models, load_delay_times, load_max_media_size, load_media_extensions, get_available_models
+from handlers.button.settings_manager import AI_SETTINGS, AI_MODELS, MEDIA_SETTINGS,OTHER_SETTINGS, PUSH_SETTINGS, AI_TAG_SETTINGS
 from utils.common import get_db_ops
 from models.models import get_session
 from sqlalchemy import text
@@ -48,6 +48,36 @@ async def create_ai_settings_buttons(rule=None,rule_id=None):
         Button.inline('❌ 关闭', "close_settings")
     ])
     
+    return buttons
+
+async def create_ai_tag_settings_buttons(rule=None, rule_id=None):
+    """创建 AI 标签设置按钮"""
+    buttons = []
+
+    for field, config in AI_TAG_SETTINGS.items():
+        if field == 'ai_tag_model':
+            current_value = getattr(rule, field)
+            display_value = current_value or os.getenv('DEFAULT_AI_MODEL', 'default')
+            button_text = f"{config['display_name']}: {display_value}"
+        elif field == 'ai_tag_max_count':
+            current_value = getattr(rule, field) or 3
+            button_text = f"{config['display_name']}: {current_value}"
+        elif field == 'ai_tag_min_length':
+            current_value = getattr(rule, field) or 100
+            button_text = f"{config['display_name']}: {current_value}"
+        else:
+            current_value = getattr(rule, field)
+            display_value = config['values'].get(current_value, str(current_value))
+            button_text = f"{config['display_name']}: {display_value}"
+
+        callback_data = f"{config['toggle_action']}:{rule.id}"
+        buttons.append([Button.inline(button_text, callback_data)])
+
+    buttons.append([
+        Button.inline('👈 返回', f"rule_settings:{rule.id}"),
+        Button.inline('❌ 关闭', "close_settings")
+    ])
+
     return buttons
 
 async def create_media_settings_buttons(rule=None,rule_id=None):
@@ -166,15 +196,18 @@ async def create_list_buttons(total_pages, current_page, command):
 
 
 # 添加模型选择按钮创建函数
-async def create_model_buttons(rule_id, page=0):
+async def create_model_buttons(rule_id, page=0, prefix='select_model'):
     """创建模型选择按钮，支持分页
 
     Args:
         rule_id: 规则ID
         page: 当前页码（从0开始）
+        prefix: 回调数据前缀（默认 select_model，可自定义）
     """
+    # 动态获取已配置 API Key 的提供商模型列表
+    available_models = get_available_models()
     buttons = []
-    total_models = len(AI_MODELS)
+    total_models = len(available_models)
     total_pages = (total_models + MODELS_PER_PAGE - 1) // MODELS_PER_PAGE
 
     # 计算当前页的模型范围
@@ -182,17 +215,17 @@ async def create_model_buttons(rule_id, page=0):
     end_idx = min(start_idx + MODELS_PER_PAGE, total_models)
 
     # 添加模型按钮
-    for model in AI_MODELS[start_idx:end_idx]:
-        buttons.append([Button.inline(f"{model}", f"select_model:{rule_id}:{model}")])
+    for model in available_models[start_idx:end_idx]:
+        buttons.append([Button.inline(f"{model}", f"{prefix}:{rule_id}:{model}")])
 
     # 添加导航按钮
     nav_buttons = []
     if page > 0:  # 不是第一页，显示"上一页"
-        nav_buttons.append(Button.inline("⬅️ 上一页", f"model_page:{rule_id}:{page - 1}"))
+        nav_buttons.append(Button.inline("⬅️ 上一页", f"model_page:{rule_id}:{page - 1}:{prefix}"))
     # 添加页码显示在中间
     nav_buttons.append(Button.inline(f"{page + 1}/{total_pages}", f"noop:{rule_id}"))
     if page < total_pages - 1:  # 不是最后一页，显示"下一页"
-        nav_buttons.append(Button.inline("下一页 ➡️", f"model_page:{rule_id}:{page + 1}"))
+        nav_buttons.append(Button.inline("下一页 ➡️", f"model_page:{rule_id}:{page + 1}:{prefix}"))
     if nav_buttons:
         buttons.append(nav_buttons)
 

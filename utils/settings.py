@@ -52,6 +52,70 @@ def load_ai_models(type="list"):
     # 默认返回模型列表
     return ["gpt-3.5-turbo", "gemini-1.5-flash", "claude-3-sonnet"]
 
+
+def get_available_models():
+    """
+    返回已配置 API Key 的提供商的模型列表。
+    只显示用户真正能用的模型，避免选了不支持的模型报错。
+
+    特殊规则：
+    - openai: 仅当 OPENAI_API_BASE 为空或指向 openai.com 时才显示 GPT 模型
+    - groq_compatible: OPENAI_API_KEY 已设且 OPENAI_API_BASE 指向第三方（如 groq.com）时显示
+    """
+    OFFICIAL_OPENAI_BASES = ('', 'https://api.openai.com', 'https://api.openai.com/v1')
+
+    try:
+        models_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'ai_models.json')
+        with open(models_path, 'r', encoding='utf-8') as f:
+            models_config = json.load(f)
+    except Exception as e:
+        logger.error(f"加载AI模型配置失败: {e}")
+        default_model = os.getenv('DEFAULT_AI_MODEL', 'gpt-4o-mini')
+        return [default_model]
+
+    openai_key = os.getenv('OPENAI_API_KEY', '').strip()
+    openai_base = os.getenv('OPENAI_API_BASE', '').strip().rstrip('/')
+
+    available = []
+    for provider_name, models in models_config.items():
+        if provider_name == 'openai':
+            # 只有真正的 OpenAI 接口才显示 GPT 模型
+            if openai_key and not openai_key.lower().startswith('your_'):
+                if openai_base in OFFICIAL_OPENAI_BASES or 'openai.com' in openai_base:
+                    available.extend(models)
+        elif provider_name == 'groq_compatible':
+            # OPENAI_API_KEY 设置了第三方 Base（如 Groq）时显示这些模型
+            if openai_key and not openai_key.lower().startswith('your_'):
+                if openai_base and 'openai.com' not in openai_base:
+                    available.extend(models)
+        else:
+            # 其他提供商：检查对应的 API Key
+            key_map = {
+                'gemini': 'GEMINI_API_KEY',
+                'deepseek': 'DEEPSEEK_API_KEY',
+                'qwen': 'QWEN_API_KEY',
+                'grok': 'GROK_API_KEY',
+                'claude': 'CLAUDE_API_KEY',
+            }
+            key_name = key_map.get(provider_name, '')
+            if key_name:
+                key_value = os.getenv(key_name, '').strip()
+                if key_value and not key_value.lower().startswith('your_'):
+                    available.extend(models)
+
+    # 如果没有任何有效模型，回退到全量列表
+    if not available:
+        for models in models_config.values():
+            available.extend(models)
+
+    # DEFAULT_AI_MODEL 始终确保在列表顶部
+    default_model = os.getenv('DEFAULT_AI_MODEL', '').strip()
+    if default_model and default_model not in available:
+        available.insert(0, default_model)
+
+    return available
+
+
 def load_summary_times():
     """加载总结时间列表"""
     try:

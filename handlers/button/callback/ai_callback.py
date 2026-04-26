@@ -286,10 +286,16 @@ async def callback_select_model(event, rule_id, session, message, data):
 
 
 async def callback_model_page(event, rule_id, session, message, data):
-    # 处理翻页
-    _, rule_id, page = data.split(':')
-    page = int(page)
-    await event.edit("请选择AI模型：", buttons=await create_model_buttons(rule_id, page=page))
+    # 处理翻页，格式: model_page:{rule_id}:{page}:{prefix}（prefix可选，默认select_model）
+    parts = data.split(':')
+    _, rid, page_str = parts[0], parts[1], parts[2]
+    prefix = parts[3] if len(parts) > 3 else 'select_model'
+    page = int(page_str)
+
+    if prefix == 'select_ai_tag_model':
+        await event.edit("请选择AI标签使用的模型：", buttons=await create_model_buttons(rid, page=page, prefix=prefix))
+    else:
+        await event.edit("请选择AI模型：", buttons=await create_model_buttons(rid, page=page, prefix=prefix))
     return
 
 

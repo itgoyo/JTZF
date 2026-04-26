@@ -30,6 +30,9 @@ async def get_ai_provider(model=None):
         if model in models_list:
             if provider_name == "openai":
                 provider = OpenAIProvider()
+            elif provider_name == "groq_compatible":
+                # 通过 OPENAI 兼容接口访问的第三方模型（如 Groq）
+                provider = OpenAIProvider()
             elif provider_name == "gemini":
                 provider = GeminiProvider()
             elif provider_name == "deepseek":
@@ -42,8 +45,15 @@ async def get_ai_provider(model=None):
                 provider = ClaudeProvider()
             break
     
-    if not provider:
-        raise ValueError(f"不支持的模型: {model}")
+    if provider:
+        # 无论哪种提供商，都必须把实际请求的模型名设置进去
+        provider.default_model = model
+        logger.info(f"使用提供商处理模型: {model}")
+    else:
+        # 模型不在配置列表中，尝试用 OpenAI 兼容接口（支持 Groq/第三方 API）
+        logger.warning(f"模型 {model} 未在配置列表中找到，尝试使用 OpenAI 兼容接口")
+        provider = OpenAIProvider()
+        provider.default_model = model
 
     return provider
 

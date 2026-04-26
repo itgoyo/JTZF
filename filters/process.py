@@ -4,6 +4,7 @@ from filters.keyword_filter import KeywordFilter
 from filters.delete_filter import DeleteFilter
 from filters.replace_filter import ReplaceFilter
 from filters.append_filter import AppendFilter
+from filters.ai_tag_filter import AITagFilter
 from filters.ai_filter import AIFilter
 from filters.info_filter import InfoFilter
 from filters.media_filter import MediaFilter
@@ -52,14 +53,17 @@ async def process_forward_rule(client, event, chat_id, rule):
     # 添加替换过滤器
     filter_chain.add_filter(ReplaceFilter())
 
-    # 添加追加文本过滤器（/append）
-    filter_chain.add_filter(AppendFilter())
-
     # 添加媒体过滤器（处理媒体内容）
     filter_chain.add_filter(MediaFilter())
     
     # 添加AI处理过滤器（如果启用了AI处理后的关键字检查，可能会中断处理链）
     filter_chain.add_filter(AIFilter())
+
+    # 添加AI自动打标签过滤器（必须在AIFilter之后，避免被覆盖）
+    filter_chain.add_filter(AITagFilter())
+
+    # 添加追加文本过滤器（/append），放在AI标签之后，确保标签出现在追加内容前面
+    filter_chain.add_filter(AppendFilter())
     
     # 添加信息过滤器（处理原始链接和发送者信息）
     filter_chain.add_filter(InfoFilter())

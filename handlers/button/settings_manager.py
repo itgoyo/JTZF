@@ -199,6 +199,33 @@ RULE_SETTINGS = {
     }
 }
 
+# AI 标签设置
+AI_TAG_SETTINGS = {
+    'enable_ai_tag': {
+        'display_name': 'AI自动打标签',
+        'values': {
+            True: '开启',
+            False: '关闭'
+        },
+        'toggle_action': 'toggle_ai_tag',
+        'toggle_func': lambda current: not current
+    },
+    'ai_tag_model': {
+        'display_name': 'AI标签模型',
+        'toggle_action': 'change_ai_tag_model',
+        'toggle_func': None
+    },
+    'ai_tag_max_count': {
+        'display_name': '最多标签数',
+        'toggle_action': 'set_ai_tag_max_count',
+        'toggle_func': None
+    },
+    'ai_tag_min_length': {
+        'display_name': '最短触发字数',
+        'toggle_action': 'set_ai_tag_min_length',
+        'toggle_func': None
+    }
+}
 
 # 添加 AI 设置
 AI_SETTINGS = {
@@ -617,6 +644,12 @@ async def create_buttons(rule):
                     "🤖 AI设置",
                     f"ai_settings:{rule.id}"
                 ),
+                Button.inline(
+                    "🏷️ AI标签",
+                    f"ai_tag_settings:{rule.id}"
+                )
+            ])
+            buttons.append([
                 Button.inline(
                     "🎬 媒体设置",
                     f"media_settings:{rule.id}"
