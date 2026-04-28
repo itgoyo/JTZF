@@ -1,7 +1,7 @@
 from telethon import Button
 from utils.constants import *
 from utils.settings import load_summary_times, load_ai_models, load_delay_times, load_max_media_size, load_media_extensions, get_available_models
-from handlers.button.settings_manager import AI_SETTINGS, AI_MODELS, MEDIA_SETTINGS,OTHER_SETTINGS, PUSH_SETTINGS, AI_TAG_SETTINGS
+from handlers.button.settings_manager import AI_SETTINGS, AI_MODELS, MEDIA_SETTINGS, OTHER_SETTINGS, PUSH_SETTINGS, AI_TAG_SETTINGS, AI_ENHANCE_SETTINGS
 from utils.common import get_db_ops
 from models.models import get_session
 from sqlalchemy import text
@@ -67,6 +67,42 @@ async def create_ai_tag_settings_buttons(rule=None, rule_id=None):
             button_text = f"{config['display_name']}: {current_value}"
         else:
             current_value = getattr(rule, field)
+            display_value = config['values'].get(current_value, str(current_value))
+            button_text = f"{config['display_name']}: {display_value}"
+
+        callback_data = f"{config['toggle_action']}:{rule.id}"
+        buttons.append([Button.inline(button_text, callback_data)])
+
+    buttons.append([
+        Button.inline('👈 返回', f"rule_settings:{rule.id}"),
+        Button.inline('❌ 关闭', "close_settings")
+    ])
+
+    return buttons
+
+async def create_ai_enhance_settings_buttons(rule=None, rule_id=None):
+    """创建 AI 增强设置按钮（去广告 + 改写）"""
+    if rule is None:
+        session = get_session()
+        try:
+            rule = session.query(ForwardRule).get(int(rule_id))
+        finally:
+            session.close()
+
+    buttons = []
+
+    for field, config in AI_ENHANCE_SETTINGS.items():
+        if field in ('ai_ad_removal_prompt', 'ai_rewrite_prompt'):
+            button_text = config['display_name']
+        elif field in ('ai_ad_removal_model', 'ai_rewrite_model'):
+            current_value = getattr(rule, field, None)
+            display_value = current_value or os.getenv('DEFAULT_AI_MODEL', '默认')
+            button_text = f"{config['display_name']}: {display_value}"
+        elif field == 'ai_ad_removal_threshold':
+            current_value = getattr(rule, field, 80)
+            button_text = f"{config['display_name']}: {current_value}%"
+        else:
+            current_value = getattr(rule, field, False)
             display_value = config['values'].get(current_value, str(current_value))
             button_text = f"{config['display_name']}: {display_value}"
 

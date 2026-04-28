@@ -85,25 +85,26 @@ async def handle_user_message(event, user_client, bot_client):
         sender_id = os.getenv('USER_ID')
         state_chat_id = int(f"100{db_chat_id}")
         # logger.info(f"handle_user_message:频道消息处理: sender_id={sender_id}, state_chat_id={state_chat_id}")
+        # 频道广播消息绝不能被当作 prompt 输入消费，直接跳过 state 检查，进入转发逻辑
     else:
         sender_id = event.sender_id
         state_chat_id = db_chat_id
         # logger.info(f"handle_user_message:非频道消息处理: sender_id={sender_id}")
 
-    # 检查用户状态（使用 state_chat_id）
-    current_state, message, state_type = state_manager.get_state(sender_id, state_chat_id)
-    # logger.info(f'handle_user_message：当前是否有状态: {state_manager.check_state()}')
-    # logger.info(f"handle_user_message：当前用户ID和聊天ID: {sender_id}, {state_chat_id}")
-    # logger.info(f"handle_user_message：获取当前聊天窗口的用户状态: {current_state}")
-    
-    if current_state:
-        # logger.info(f"检测到用户状态: {current_state}")
-        # 处理提示词设置
-        # logger.info("准备处理提示词设置")
-        if await handle_prompt_setting(event, bot_client, sender_id, state_chat_id, current_state, message):
-            # logger.info("提示词设置处理完成，返回")
-            return
-        # logger.info("提示词设置处理未完成，继续执行")
+        # 仅对非频道消息检查用户状态（避免被监听频道的普通消息误触发 prompt 输入）
+        current_state, message, state_type = state_manager.get_state(sender_id, state_chat_id)
+        # logger.info(f'handle_user_message：当前是否有状态: {state_manager.check_state()}')
+        # logger.info(f"handle_user_message：当前用户ID和聊天ID: {sender_id}, {state_chat_id}")
+        # logger.info(f"handle_user_message：获取当前聊天窗口的用户状态: {current_state}")
+
+        if current_state:
+            # logger.info(f"检测到用户状态: {current_state}")
+            # 处理提示词设置
+            # logger.info("准备处理提示词设置")
+            if await handle_prompt_setting(event, bot_client, sender_id, state_chat_id, current_state, message):
+                # logger.info("提示词设置处理完成，返回")
+                return
+            # logger.info("提示词设置处理未完成，继续执行")
 
     # 检查是否是媒体组消息（使用 db_chat_id 保持一致性）
     if event.message.grouped_id:

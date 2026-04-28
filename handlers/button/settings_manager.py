@@ -470,6 +470,53 @@ PUSH_SETTINGS = {
     }
 }
 
+# AI 增强设置（去广告 + 改写）
+AI_ENHANCE_SETTINGS = {
+    'enable_ai_ad_removal': {
+        'display_name': 'AI去广告',
+        'values': {
+            True: '开启',
+            False: '关闭'
+        },
+        'toggle_action': 'toggle_ai_ad_removal',
+        'toggle_func': lambda current: not current
+    },
+    'ai_ad_removal_model': {
+        'display_name': 'AI去广告模型',
+        'toggle_action': 'change_ai_ad_removal_model',
+        'toggle_func': None
+    },
+    'ai_ad_removal_threshold': {
+        'display_name': '去广告置信度阈值',
+        'toggle_action': 'set_ai_ad_removal_threshold',
+        'toggle_func': None
+    },
+    'ai_ad_removal_prompt': {
+        'display_name': '设置AI去广告提示词',
+        'toggle_action': 'set_ai_ad_removal_prompt',
+        'toggle_func': None
+    },
+    'enable_ai_rewrite': {
+        'display_name': 'AI改写',
+        'values': {
+            True: '开启',
+            False: '关闭'
+        },
+        'toggle_action': 'toggle_ai_rewrite',
+        'toggle_func': lambda current: not current
+    },
+    'ai_rewrite_model': {
+        'display_name': 'AI改写模型',
+        'toggle_action': 'change_ai_rewrite_model',
+        'toggle_func': None
+    },
+    'ai_rewrite_prompt': {
+        'display_name': '设置AI改写提示词',
+        'toggle_action': 'set_ai_rewrite_prompt',
+        'toggle_func': None
+    },
+}
+
 async def create_settings_text(rule):
     """创建设置信息文本"""
     text = (
@@ -651,9 +698,15 @@ async def create_buttons(rule):
             ])
             buttons.append([
                 Button.inline(
+                    "✨ AI增强",
+                    f"ai_enhance_settings:{rule.id}"
+                ),
+                Button.inline(
                     "🎬 媒体设置",
                     f"media_settings:{rule.id}"
-                ),
+                )
+            ])
+            buttons.append([
                 Button.inline(
                     "➕ 其他设置",
                     f"other_settings:{rule.id}"

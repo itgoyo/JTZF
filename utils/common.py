@@ -242,6 +242,28 @@ async def get_ai_settings_text(rule):
         summary_prompt=summary_prompt
     )
 
+async def get_ai_enhance_settings_text(rule):
+    """生成AI增强设置页面的文本"""
+    from utils.constants import DEFAULT_AI_AD_REMOVAL_PROMPT, DEFAULT_AI_REWRITE_PROMPT
+    ad_removal_prompt = rule.ai_ad_removal_prompt or DEFAULT_AI_AD_REMOVAL_PROMPT
+    rewrite_prompt = rule.ai_rewrite_prompt or DEFAULT_AI_REWRITE_PROMPT
+    ad_removal_model = rule.ai_ad_removal_model or os.getenv('DEFAULT_AI_MODEL', '默认')
+    rewrite_model = rule.ai_rewrite_model or os.getenv('DEFAULT_AI_MODEL', '默认')
+    threshold = getattr(rule, 'ai_ad_removal_threshold', 80)
+
+    return (
+        f"✨ AI增强设置\n\n"
+        f"**AI去广告**\n"
+        f"状态：{'开启' if rule.enable_ai_ad_removal else '关闭'}\n"
+        f"模型：`{ad_removal_model}`\n"
+        f"置信度阈值：`{threshold}%`\n"
+        f"提示词：\n`{ad_removal_prompt}`\n\n"
+        f"**AI改写**\n"
+        f"状态：{'开启' if rule.enable_ai_rewrite else '关闭'}\n"
+        f"模型：`{rewrite_model}`\n"
+        f"提示词：\n`{rewrite_prompt}`"
+    )
+
 async def get_sender_info(event, rule_id):
     """
     获取发送者信息

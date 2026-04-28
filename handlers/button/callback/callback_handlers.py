@@ -1,6 +1,6 @@
 from handlers.button.button_helpers import create_delay_time_buttons
 from handlers.list_handlers import show_list
-from handlers.button.settings_manager import create_settings_text, create_buttons, RULE_SETTINGS, MEDIA_SETTINGS, AI_SETTINGS
+from handlers.button.settings_manager import create_settings_text, create_buttons, RULE_SETTINGS, MEDIA_SETTINGS, AI_SETTINGS, AI_ENHANCE_SETTINGS
 from models.models import Chat, ReplaceRule, Keyword,get_session, ForwardRule, RuleSync
 from telethon import Button
 from handlers.button.callback.ai_callback import *
@@ -13,7 +13,7 @@ import aiohttp
 from utils.constants import RSS_HOST, RSS_PORT
 from utils.auto_delete import respond_and_delete,reply_and_delete
 from utils.common import check_and_clean_chats
-from handlers.button.button_helpers import create_sync_rule_buttons,create_other_settings_buttons
+from handlers.button.button_helpers import create_sync_rule_buttons,create_other_settings_buttons, create_ai_enhance_settings_buttons
 
 logger = logging.getLogger(__name__)
 
@@ -553,6 +553,12 @@ async def update_rule_setting(event, rule_id, session, message, field_name, conf
                 await get_ai_settings_text(rule),
                 buttons=await create_ai_settings_buttons(rule)
             )
+        elif setting_type == 'ai_enhance':
+            from utils.common import get_ai_enhance_settings_text
+            await message.edit(
+                await get_ai_enhance_settings_text(rule),
+                buttons=await create_ai_enhance_settings_buttons(rule)
+            )
         elif setting_type == 'other':
             await event.edit("其他设置：", buttons=await create_other_settings_buttons(rule))
         elif setting_type == 'push':
@@ -614,6 +620,13 @@ async def handle_callback(event):
                 for field_name, config in AI_SETTINGS.items():
                     if action == config['toggle_action']:
                         success = await update_rule_setting(event, rule_id, session, message, field_name, config, 'ai')
+                        if success:
+                            return
+
+                # 尝试在AI_ENHANCE_SETTINGS中查找
+                for field_name, config in AI_ENHANCE_SETTINGS.items():
+                    if action == config['toggle_action'] and config.get('toggle_func'):
+                        success = await update_rule_setting(event, rule_id, session, message, field_name, config, 'ai_enhance')
                         if success:
                             return
         finally:
@@ -707,4 +720,14 @@ CALLBACK_HANDLERS = {
     'toggle_media_send_mode': callback_toggle_media_send_mode,
     'delete_push_config': callback_delete_push_config,
     'push_page': callback_push_page,
+    # AI 增强设置
+    'ai_enhance_settings': callback_ai_enhance_settings,
+    'change_ai_ad_removal_model': callback_change_ai_ad_removal_model,
+    'select_ai_ad_removal_model': callback_select_ai_ad_removal_model,
+    'set_ai_ad_removal_threshold': callback_set_ai_ad_removal_threshold,
+    'set_ai_ad_removal_prompt': callback_set_ai_ad_removal_prompt,
+    'change_ai_rewrite_model': callback_change_ai_rewrite_model,
+    'select_ai_rewrite_model': callback_select_ai_rewrite_model,
+    'set_ai_rewrite_prompt': callback_set_ai_rewrite_prompt,
+    'cancel_set_ai_enhance': callback_cancel_set_ai_enhance,
 }

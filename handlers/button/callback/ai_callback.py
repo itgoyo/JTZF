@@ -4,11 +4,11 @@ from managers.state_manager import state_manager
 import asyncio
 from telethon.tl import types
 
-from handlers.button.button_helpers import create_ai_settings_buttons, create_model_buttons, create_summary_time_buttons
+from handlers.button.button_helpers import create_ai_settings_buttons, create_model_buttons, create_summary_time_buttons, create_ai_enhance_settings_buttons
 from models.models import ForwardRule, RuleSync
 from telethon import Button
 import logging
-from utils.common import get_main_module, get_ai_settings_text
+from utils.common import get_main_module, get_ai_settings_text, get_ai_enhance_settings_text
 from utils.common import is_admin
 from scheduler.summary_scheduler import SummaryScheduler
 
@@ -381,3 +381,193 @@ async def callback_summary_now(event, rule_id, session, message, data):
         session.close()
     
     return
+
+
+# ────────────────────────────────────────────────
+# AI 增强设置（去广告 + 改写）
+# ────────────────────────────────────────────────
+
+async def callback_ai_enhance_settings(event, rule_id, session, message, data):
+    """显示 AI 增强设置页面"""
+    try:
+        rule = session.query(ForwardRule).get(int(rule_id))
+        if rule:
+            await event.edit(
+                await get_ai_enhance_settings_text(rule),
+                buttons=await create_ai_enhance_settings_buttons(rule)
+            )
+    finally:
+        session.close()
+
+
+# ── 去广告：模型选择 ──
+
+async def callback_change_ai_ad_removal_model(event, rule_id, session, message, data):
+    await event.edit("请选择AI去广告使用的模型：",
+                     buttons=await create_model_buttons(rule_id, page=0, prefix='select_ai_ad_removal_model'))
+    return
+
+
+async def callback_select_ai_ad_removal_model(event, rule_id, session, message, data):
+    parts = data.split(':', 2)
+    _, rid, model = parts
+    try:
+        rule = session.query(ForwardRule).get(int(rid))
+        if rule:
+            rule.ai_ad_removal_model = model
+            session.commit()
+            await event.edit(await get_ai_enhance_settings_text(rule),
+                             buttons=await create_ai_enhance_settings_buttons(rule))
+    finally:
+        session.close()
+
+
+# ── 去广告：置信度阈值 ──
+
+async def callback_set_ai_ad_removal_threshold(event, rule_id, session, message, data):
+    """进入设置去广告置信度阈值状态"""
+    rule = session.query(ForwardRule).get(int(rule_id))
+    if not rule:
+        await event.answer('规则不存在')
+        return
+
+    if isinstance(event.chat, types.Channel):
+        if not await is_admin(event):
+            await event.answer('只有管理员可以修改设置')
+            return
+        user_id = os.getenv('USER_ID')
+    else:
+        user_id = event.sender_id
+
+    chat_id = abs(event.chat_id)
+    state = f"set_ai_ad_removal_threshold:{rule_id}"
+    state_manager.set_state(user_id, chat_id, state, message, state_type="ai_enhance")
+    asyncio.create_task(cancel_state_after_timeout(user_id, chat_id))
+
+    current = getattr(rule, 'ai_ad_removal_threshold', 80)
+    try:
+        await message.edit(
+            f"请发送新的置信度阈值（整数 1-100，当前: {current}）\n"
+            f"例如：80 表示 80% 置信度时才去广告\n"
+            f"5分钟内未设置将自动取消",
+            buttons=[[Button.inline("取消", f"cancel_set_ai_enhance:{rule_id}")]]
+        )
+    except Exception as e:
+        logger.error(f"编辑消息时出错: {str(e)}")
+    finally:
+        session.close()
+
+
+# ── 去广告：提示词 ──
+
+async def callback_set_ai_ad_removal_prompt(event, rule_id, session, message, data):
+    """进入设置去广告提示词状态"""
+    rule = session.query(ForwardRule).get(int(rule_id))
+    if not rule:
+        await event.answer('规则不存在')
+        return
+
+    if isinstance(event.chat, types.Channel):
+        if not await is_admin(event):
+            await event.answer('只有管理员可以修改设置')
+            return
+        user_id = os.getenv('USER_ID')
+    else:
+        user_id = event.sender_id
+
+    chat_id = abs(event.chat_id)
+    state = f"set_ai_ad_removal_prompt:{rule_id}"
+    state_manager.set_state(user_id, chat_id, state, message, state_type="ai_enhance")
+    asyncio.create_task(cancel_state_after_timeout(user_id, chat_id))
+
+    from utils.constants import DEFAULT_AI_AD_REMOVAL_PROMPT
+    current_prompt = rule.ai_ad_removal_prompt or DEFAULT_AI_AD_REMOVAL_PROMPT
+    try:
+        await message.edit(
+            f"请发送新的AI去广告提示词\n"
+            f"当前规则ID: `{rule_id}`\n"
+            f"当前提示词：\n\n`{current_prompt}`\n\n"
+            f"5分钟内未设置将自动取消",
+            buttons=[[Button.inline("取消", f"cancel_set_ai_enhance:{rule_id}")]]
+        )
+    except Exception as e:
+        logger.error(f"编辑消息时出错: {str(e)}")
+    finally:
+        session.close()
+
+
+# ── 改写：模型选择 ──
+
+async def callback_change_ai_rewrite_model(event, rule_id, session, message, data):
+    await event.edit("请选择AI改写使用的模型：",
+                     buttons=await create_model_buttons(rule_id, page=0, prefix='select_ai_rewrite_model'))
+    return
+
+
+async def callback_select_ai_rewrite_model(event, rule_id, session, message, data):
+    parts = data.split(':', 2)
+    _, rid, model = parts
+    try:
+        rule = session.query(ForwardRule).get(int(rid))
+        if rule:
+            rule.ai_rewrite_model = model
+            session.commit()
+            await event.edit(await get_ai_enhance_settings_text(rule),
+                             buttons=await create_ai_enhance_settings_buttons(rule))
+    finally:
+        session.close()
+
+
+# ── 改写：提示词 ──
+
+async def callback_set_ai_rewrite_prompt(event, rule_id, session, message, data):
+    """进入设置改写提示词状态"""
+    rule = session.query(ForwardRule).get(int(rule_id))
+    if not rule:
+        await event.answer('规则不存在')
+        return
+
+    if isinstance(event.chat, types.Channel):
+        if not await is_admin(event):
+            await event.answer('只有管理员可以修改设置')
+            return
+        user_id = os.getenv('USER_ID')
+    else:
+        user_id = event.sender_id
+
+    chat_id = abs(event.chat_id)
+    state = f"set_ai_rewrite_prompt:{rule_id}"
+    state_manager.set_state(user_id, chat_id, state, message, state_type="ai_enhance")
+    asyncio.create_task(cancel_state_after_timeout(user_id, chat_id))
+
+    from utils.constants import DEFAULT_AI_REWRITE_PROMPT
+    current_prompt = rule.ai_rewrite_prompt or DEFAULT_AI_REWRITE_PROMPT
+    try:
+        await message.edit(
+            f"请发送新的AI改写提示词\n"
+            f"当前规则ID: `{rule_id}`\n"
+            f"当前提示词：\n\n`{current_prompt}`\n\n"
+            f"5分钟内未设置将自动取消",
+            buttons=[[Button.inline("取消", f"cancel_set_ai_enhance:{rule_id}")]]
+        )
+    except Exception as e:
+        logger.error(f"编辑消息时出错: {str(e)}")
+    finally:
+        session.close()
+
+
+# ── 取消设置 ──
+
+async def callback_cancel_set_ai_enhance(event, rule_id, session, message, data):
+    """取消AI增强设置输入状态"""
+    rule_id = data.split(':')[1]
+    try:
+        rule = session.query(ForwardRule).get(int(rule_id))
+        if rule:
+            state_manager.clear_state(event.sender_id, abs(event.chat_id))
+            await event.edit(await get_ai_enhance_settings_text(rule),
+                             buttons=await create_ai_enhance_settings_buttons(rule))
+            await event.answer("已取消设置")
+    finally:
+        session.close()
+

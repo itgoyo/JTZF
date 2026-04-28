@@ -82,6 +82,15 @@ class ForwardRule(Base):
     # 同步功能相关
     enable_sync = Column(Boolean, default=False)  # 是否启用规则同步功能
 
+    # AI增强相关字段
+    enable_ai_ad_removal = Column(Boolean, default=False)  # 是否启用AI去广告
+    ai_ad_removal_model = Column(String, nullable=True)    # AI去广告使用的模型
+    ai_ad_removal_prompt = Column(String, nullable=True)   # AI去广告的提示词
+    ai_ad_removal_threshold = Column(Integer, default=80)  # AI去广告置信度阈值（0-100整数，存储时×100）
+    enable_ai_rewrite = Column(Boolean, default=False)     # 是否启用AI改写
+    ai_rewrite_model = Column(String, nullable=True)       # AI改写使用的模型
+    ai_rewrite_prompt = Column(String, nullable=True)      # AI改写的提示词
+
     # 添加唯一约束
     __table_args__ = (
         UniqueConstraint('source_chat_id', 'target_chat_id', name='unique_source_target'),
@@ -425,6 +434,14 @@ def migrate_db(engine):
         'ai_tag_model': 'ALTER TABLE forward_rules ADD COLUMN ai_tag_model VARCHAR DEFAULT NULL',
         'ai_tag_max_count': 'ALTER TABLE forward_rules ADD COLUMN ai_tag_max_count INTEGER DEFAULT 3',
         'ai_tag_min_length': 'ALTER TABLE forward_rules ADD COLUMN ai_tag_min_length INTEGER DEFAULT 100',
+        # AI增强字段
+        'enable_ai_ad_removal': 'ALTER TABLE forward_rules ADD COLUMN enable_ai_ad_removal BOOLEAN DEFAULT FALSE',
+        'ai_ad_removal_model': 'ALTER TABLE forward_rules ADD COLUMN ai_ad_removal_model VARCHAR DEFAULT NULL',
+        'ai_ad_removal_prompt': 'ALTER TABLE forward_rules ADD COLUMN ai_ad_removal_prompt VARCHAR DEFAULT NULL',
+        'ai_ad_removal_threshold': 'ALTER TABLE forward_rules ADD COLUMN ai_ad_removal_threshold INTEGER DEFAULT 80',
+        'enable_ai_rewrite': 'ALTER TABLE forward_rules ADD COLUMN enable_ai_rewrite BOOLEAN DEFAULT FALSE',
+        'ai_rewrite_model': 'ALTER TABLE forward_rules ADD COLUMN ai_rewrite_model VARCHAR DEFAULT NULL',
+        'ai_rewrite_prompt': 'ALTER TABLE forward_rules ADD COLUMN ai_rewrite_prompt VARCHAR DEFAULT NULL',
     }
 
     keywords_new_columns = {

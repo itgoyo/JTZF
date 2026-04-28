@@ -1,7 +1,7 @@
 import logging
 from models.models import get_session, ForwardRule, RuleSync
 from managers.state_manager import state_manager
-from utils.common import get_ai_settings_text
+from utils.common import get_ai_settings_text, get_ai_enhance_settings_text
 from handlers import bot_handler
 from utils.auto_delete import async_delete_user_message
 from utils.common import get_bot_client
@@ -66,6 +66,21 @@ async def handle_prompt_setting(event, client, sender_id, chat_id, current_state
     elif current_state.startswith("set_ai_tag_min_length:"):
         rule_id = current_state.split(":")[1]
         return await handle_ai_tag_number_input(event, client, sender_id, chat_id, rule_id, "ai_tag_min_length", "最短触发字数", 1, 10000, message)
+    elif current_state.startswith("set_ai_ad_removal_prompt:"):
+        rule_id = current_state.split(":")[1]
+        field_name = "ai_ad_removal_prompt"
+        prompt_type = "AI去广告"
+        template_type = "ai_enhance"
+        logger.info(f"检测到设置AI去广告提示词,规则ID:{rule_id}")
+    elif current_state.startswith("set_ai_rewrite_prompt:"):
+        rule_id = current_state.split(":")[1]
+        field_name = "ai_rewrite_prompt"
+        prompt_type = "AI改写"
+        template_type = "ai_enhance"
+        logger.info(f"检测到设置AI改写提示词,规则ID:{rule_id}")
+    elif current_state.startswith("set_ai_ad_removal_threshold:"):
+        rule_id = current_state.split(":")[1]
+        return await handle_ai_ad_removal_threshold_input(event, client, sender_id, chat_id, rule_id, message)
     else:
         logger.info(f"未知的状态类型:{current_state}")
         return False
@@ -141,6 +156,14 @@ async def handle_prompt_setting(event, client, sender_id, chat_id, current_state
                     chat_id,
                     await get_ai_settings_text(rule),
                     buttons=await bot_handler.create_ai_settings_buttons(rule)
+                )
+            elif template_type == "ai_enhance":
+                # AI增强设置页面
+                from handlers.button.button_helpers import create_ai_enhance_settings_buttons
+                await client.send_message(
+                    chat_id,
+                    await get_ai_enhance_settings_text(rule),
+                    buttons=await create_ai_enhance_settings_buttons(rule)
                 )
             elif template_type in ["userinfo", "time", "link"]:
                 # 其他设置页面
@@ -333,6 +356,51 @@ async def handle_add_push_channel(event, client, sender_id, chat_id, rule_id, me
     except Exception as e:
         logger.error(f"处理添加推送频道时出错: {str(e)}")
         logger.error(traceback.format_exc())
+        return False
+    finally:
+        session.close()
+
+
+async def handle_ai_ad_removal_threshold_input(event, client, sender_id, chat_id, rule_id, message):
+    """处理 AI 去广告置信度阈值数字输入（整数 1-100）"""
+    text = event.message.text.strip()
+    try:
+        value = int(text)
+        if not (1 <= value <= 100):
+            raise ValueError
+    except ValueError:
+        bot_client = await get_bot_client()
+        await bot_client.send_message(chat_id, '输入无效，请输入 1-100 之间的整数（表示百分比）')
+        return False
+
+    session = get_session()
+    try:
+        rule = session.query(ForwardRule).get(int(rule_id))
+        if not rule:
+            logger.warning(f'未找到规则ID:{rule_id}')
+            return False
+        rule.ai_ad_removal_threshold = value
+        session.commit()
+        state_manager.clear_state(sender_id, chat_id)
+        logger.info(f'已更新规则 {rule_id} 的去广告置信度阈值为 {value}%')
+
+        bot_client = await get_bot_client()
+        from handlers.button.button_helpers import create_ai_enhance_settings_buttons
+
+        try:
+            await async_delete_user_message(bot_client, event.message.chat_id, event.message.id, 0)
+        except Exception as e:
+            logger.error(f'删除用户消息失败: {e}')
+
+        await message.delete()
+        await client.send_message(
+            chat_id,
+            await get_ai_enhance_settings_text(rule),
+            buttons=await create_ai_enhance_settings_buttons(rule)
+        )
+        return True
+    except Exception as e:
+        logger.error(f'处理去广告置信度阈值输入时出错: {e}', exc_info=True)
         return False
     finally:
         session.close()

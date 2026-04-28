@@ -30,6 +30,13 @@ class OpenAIBaseProvider(BaseAIProvider):
             api_key = os.getenv(f'{self.env_prefix}_API_KEY')
             if not api_key:
                 raise ValueError(f"未设置 {self.env_prefix}_API_KEY 环境变量")
+            # 检测占位符，未填写真实 Key 时给出友好提示
+            placeholder_values = {'***', 'your_key', 'your_api_key', 'sk-xxx', 'xxx', ''}
+            if api_key.strip().lower() in placeholder_values or api_key.strip() == '***':
+                raise ValueError(
+                    f"{self.env_prefix}_API_KEY 尚未配置真实密钥（当前值为占位符 '{api_key}'）。"
+                    f"请在 .env 文件中填入真实的 API Key。"
+                )
 
             api_base = os.getenv(f'{self.env_prefix}_API_BASE', '').strip() or self.default_api_base
 
