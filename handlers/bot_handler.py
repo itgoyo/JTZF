@@ -147,6 +147,8 @@ async def handle_command(client, event):
         'f': lambda: handle_forward_command(event, 'forward', parts),
         'source': lambda: handle_source_command(event, parts),
         'src': lambda: handle_source_command(event, parts),
+        'preview': lambda: handle_preview_command(event, parts),
+        'pv': lambda: handle_preview_command(event, parts),
     }
 
     # 执行对应的命令处理器

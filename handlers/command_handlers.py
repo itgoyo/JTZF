@@ -1369,6 +1369,138 @@ async def handle_forwarded_message_source(event) -> bool:
     await reply_and_delete(event, result, parse_mode='markdown')
     return True
 
+async def _simulate_rule_processing(rule, raw_text: str):
+    """模拟关键字过滤、deleteend、替换规则处理，返回 (blocked, block_reason, final_text)。
+    不实际发送任何消息，仅用于 /preview 预览。"""
+    from utils.common import check_keywords
+
+    final_text = raw_text
+
+    # ── 1. 关键字过滤模拟 ──
+    try:
+        should_forward = await check_keywords(rule, raw_text, event=None)
+    except Exception as e:
+        should_forward = True  # 出错时默认放行，不影响预览
+        logger.warning(f'[preview] check_keywords 出错: {e}')
+
+    if not should_forward:
+        return True, '关键字规则拦截（黑名单命中 或 白名单未匹配）', raw_text
+
+    # ── 2. DeleteEnd 规则模拟 ──
+    from models.models import DeleteRule, get_session as _gs
+    _session = _gs()
+    try:
+        delete_rules = _session.query(DeleteRule).filter_by(rule_id=rule.id).all()
+        for dr in delete_rules:
+            pos = final_text.find(dr.keyword)
+            if pos != -1:
+                final_text = final_text[:pos]
+                break
+    finally:
+        _session.close()
+
+    # ── 3. 替换规则模拟 ──
+    if rule.is_replace and rule.replace_rules:
+        for rr in rule.replace_rules:
+            try:
+                if rr.pattern == '.*':
+                    final_text = rr.content or ''
+                    break
+                else:
+                    final_text = re.sub(rr.pattern, rr.content or '', final_text)
+            except Exception as e:
+                logger.warning(f'[preview] 替换规则 pattern={rr.pattern!r} 出错: {e}')
+
+    return False, '', final_text
+
+
+async def handle_preview_command(event, parts):
+    """处理 /preview 命令 — 预览消息经过当前规则处理后的转发结果，不实际发送。"""
+    import re as _re
+
+    replied = await event.message.get_reply_message()
+    target_message = None
+
+    if replied:
+        target_message = replied
+    elif len(parts) >= 2:
+        link = parts[1]
+        match = _re.match(r'https?://t\.me/(?:c/(\d+)|([^/]+))/(\d+)', link)
+        if not match:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, '链接格式不正确\n支持格式：\nhttps://t.me/channel/123\nhttps://t.me/c/1234567890/123')
+            return
+        try:
+            message_id = int(match.group(3))
+            main = await get_main_module()
+            user_client = main.user_client
+            if match.group(1):
+                chat_id = int('-100' + match.group(1))
+            else:
+                entity = await user_client.get_entity(match.group(2))
+                chat_id = entity.id
+            target_message = await user_client.get_messages(chat_id, ids=message_id)
+        except Exception as e:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, f'获取消息失败: {str(e)}')
+            return
+    else:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, '用法:\n1. 回复一条消息后发 /preview\n2. /preview <消息链接>')
+        return
+
+    if not target_message:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, '无法获取目标消息')
+        return
+
+    # 获取当前规则
+    session = get_session()
+    try:
+        rule_info = await get_current_rule(session, event)
+    finally:
+        session.close()
+
+    if not rule_info:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, '⚠️ 请先用 /switch 选择一条转发规则，再使用 /preview')
+        return
+
+    rule, source_chat = rule_info
+    raw_text = target_message.raw_text or ''
+
+    blocked, block_reason, final_text = await _simulate_rule_processing(rule, raw_text)
+
+    lines = ['🔍 **转发预览**', '']
+    lines.append(f'**规则来源：** {source_chat.name}')
+    lines.append('')
+
+    # 原始文本
+    lines.append('**原始文本：**')
+    if raw_text:
+        lines.append(f'```\n{raw_text.replace(chr(96), chr(39))}\n```')
+    else:
+        lines.append('（无文本内容）')
+    lines.append('')
+
+    # 处理结果
+    if blocked:
+        lines.append(f'**处理结果：** ❌ 该消息会被拦截，**不会转发**')
+        lines.append(f'**拦截原因：** {block_reason}')
+    else:
+        lines.append('**处理结果：** ✅ 该消息**会被转发**')
+        if final_text != raw_text:
+            lines.append('')
+            lines.append('**处理后文本（与原文不同）：**')
+            lines.append(f'```\n{final_text.replace(chr(96), chr(39))}\n```')
+        else:
+            lines.append('**处理后文本：** 与原文相同，无规则命中')
+
+    result = '\n'.join(lines)
+    await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+    await reply_and_delete(event, result, parse_mode='markdown')
+
+
 
 async def handle_export_keyword_command(event, command):
     """处理 export_keyword 命令"""

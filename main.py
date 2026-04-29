@@ -217,6 +217,10 @@ async def register_bot_commands(bot):
             command='source',
             description='查看消息原始内容（回复消息或提供链接）'
         ),
+        BotCommand(
+            command='preview',
+            description='预览消息经过当前规则处理后的转发结果（不实际发送）'
+        ),
         # 绑定和设置
         BotCommand(
             command='bind',

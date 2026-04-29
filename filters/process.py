@@ -52,6 +52,10 @@ async def process_forward_rule(client, event, chat_id, rule):
     # 延迟处理过滤器（如果启用了延迟处理）
     filter_chain.add_filter(DelayFilter())
     
+    # 添加去重过滤器（相同内容在时间窗口内只转发一次，通过 DEDUP_ENABLED=true 开启）
+    from filters.dedup_filter import DedupFilter
+    filter_chain.add_filter(DedupFilter())
+
     # 添加关键字过滤器（如果消息不匹配关键字，会中断处理链）
     filter_chain.add_filter(KeywordFilter())
     
