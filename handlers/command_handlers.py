@@ -1158,7 +1158,76 @@ async def handle_help_command(event, command):
     await reply_and_delete(event,help_text, parse_mode='markdown')
 
 
-def _build_source_report(target_message) -> str:
+_DELETEEND_AI_PROMPT = """你是一个 Telegram 频道消息清洗助手。
+你的任务：分析下面这条消息的纯文本内容，找出消息末尾的广告、推广、引流等附加内容的**起始特征词或特征短语**。
+
+规则：
+1. 只返回"广告尾部的第一个关键词/短语"，它必须是广告内容的开头标志（分隔符、署名、引流词等）。
+2. 关键词必须完整地出现在原文中（区分大小写，一字不差）。
+3. 优先推荐：分隔线（---、===、———）、@频道名、"关注"/"订阅"/"更多内容"/"点击"/"加入"等引流词、"本文来源"/"转载"等署名词。
+4. 不要推荐出现在正文段落中间的词，只推荐广告部分的起始词。
+5. 最多返回 3 个候选，按优先级从高到低排列。
+6. 只返回 JSON 数组格式，不要任何解释，例如：["———\n关注我们", "@channel_name", "更多精彩内容"]
+7. 如果没有广告尾部，返回空数组：[]
+"""
+
+async def _get_deleteend_suggestions(raw_text: str):
+    """调用 AI 分析消息文本，返回已验证有效的 /deleteend 候选关键字列表。
+    
+    Returns:
+        list[str] | None:
+            - list（可能为空）表示 AI 分析完成（空=没找到广告尾部）
+            - None 表示 AI 调用失败，不展示推荐区块
+    """
+    import json as _json
+    from ai import get_ai_provider
+    from utils.constants import DEFAULT_AI_MODEL
+
+    if not raw_text or not raw_text.strip():
+        return None
+
+    try:
+        model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
+        provider = await get_ai_provider(model)
+        logger.info(f'[deleteend AI] 开始分析广告尾部，文本长度: {len(raw_text)}')
+
+        response = await provider.process_message(
+            message=raw_text,
+            prompt=_DELETEEND_AI_PROMPT,
+        )
+        logger.info(f'[deleteend AI] 原始响应: {response!r}')
+
+        # 解析 JSON，兼容 AI 可能带 markdown 代码块的情况
+        cleaned = response.strip()
+        if cleaned.startswith('```'):
+            cleaned = re.sub(r'^```[a-z]*\n?', '', cleaned)
+            cleaned = re.sub(r'```$', '', cleaned).strip()
+
+        candidates = _json.loads(cleaned)
+        if not isinstance(candidates, list):
+            logger.warning('[deleteend AI] 响应不是数组，跳过')
+            return []
+
+        # 逐一验证：关键字必须真实存在于原文中
+        verified = []
+        for kw in candidates:
+            if not isinstance(kw, str) or not kw.strip():
+                continue
+            kw = kw.strip()
+            if raw_text.find(kw) != -1:
+                verified.append(kw)
+                logger.info(f'[deleteend AI] ✅ 验证通过: {kw!r}')
+            else:
+                logger.info(f'[deleteend AI] ❌ 验证失败（原文中不存在）: {kw!r}')
+
+        return verified
+
+    except Exception as e:
+        logger.warning(f'[deleteend AI] 分析失败，跳过推荐: {e}')
+        return None
+
+
+def _build_source_report(target_message, deleteend_suggestions=None) -> str:
     """构建消息原始内容报告文本"""
     from telethon.extensions import html as tl_html, markdown as tl_markdown
 
@@ -1217,6 +1286,23 @@ def _build_source_report(target_message) -> str:
                 else:
                     lines.append(f'  • {btn_text}')
 
+    # ── 5. AI 推荐的 /deleteend 方案（已验证有效）──
+    if deleteend_suggestions:
+        lines.append('')
+        lines.append('─' * 30)
+        lines.append('**💡 /deleteend 推荐方案（已验证有效，可直接复制）：**')
+        lines.append('')
+        for kw in deleteend_suggestions:
+            escaped_kw = kw.replace('`', "'")
+            lines.append(f'`/deleteend {escaped_kw}`')
+        lines.append('')
+        lines.append('_以上关键字均已在原文中确认存在，使用后会删除该词及其后所有内容。_')
+    elif deleteend_suggestions is not None:
+        # AI 分析了但没找到广告尾巴
+        lines.append('')
+        lines.append('─' * 30)
+        lines.append('**💡 /deleteend 推荐：** 未检测到明显的广告/推广尾部内容。')
+
     return '\n'.join(lines)
 
 
@@ -1262,7 +1348,11 @@ async def handle_source_command(event, parts):
         await reply_and_delete(event, '无法获取目标消息')
         return
 
-    result = _build_source_report(target_message)
+    # 调用 AI 分析 /deleteend 推荐（在删消息前完成）
+    raw_text = target_message.raw_text or ''
+    deleteend_suggestions = await _get_deleteend_suggestions(raw_text)
+
+    result = _build_source_report(target_message, deleteend_suggestions=deleteend_suggestions)
     await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
     await reply_and_delete(event, result, parse_mode='markdown')
 
@@ -1273,7 +1363,9 @@ async def handle_forwarded_message_source(event) -> bool:
     if not event.message.fwd_from:
         return False
 
-    result = _build_source_report(event.message)
+    raw_text = event.message.raw_text or ''
+    deleteend_suggestions = await _get_deleteend_suggestions(raw_text)
+    result = _build_source_report(event.message, deleteend_suggestions=deleteend_suggestions)
     await reply_and_delete(event, result, parse_mode='markdown')
     return True
 

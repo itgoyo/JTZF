@@ -67,3 +67,4 @@ handlers/bot_handler copy.py
 
 # ===== Docker 生成产物 =====
 *.pid
+.alma-snapshots
