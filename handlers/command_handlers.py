@@ -3085,12 +3085,20 @@ async def handle_forward_comment_command(event, command, parts):
             return
 
         # ── 解析目标频道 ──
+        # user_client entity 用于读（获取 Discussion 信息）
+        # bot_client entity 用于写（发消息），两者 access_hash 不同不可混用
         try:
             target_entity = await user_client.get_entity(target_input)
             target_name = getattr(target_entity, 'title', target_input)
         except Exception as e:
             await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
             await reply_and_delete(event, f'无法获取目标频道: {str(e)}')
+            return
+        try:
+            target_entity_bot = await bot_client.get_entity(target_input)
+        except Exception as e:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, f'Bot 无法访问目标频道（请确认 bot 已加入目标频道）: {str(e)}')
             return
 
         # ── 获取原帖子 ──
@@ -3125,7 +3133,7 @@ async def handle_forward_comment_command(event, command, parts):
                 if file_path:
                     try:
                         sent_post = await bot_client.send_file(
-                            target_entity,
+                            target_entity_bot,
                             file_path,
                             caption=post_message.message or None,
                             formatting_entities=post_message.entities
@@ -3140,13 +3148,13 @@ async def handle_forward_comment_command(event, command, parts):
                     # 媒体下载失败，只发文本
                     if post_message.message:
                         sent_post = await bot_client.send_message(
-                            target_entity,
+                            target_entity_bot,
                             post_message.message,
                             formatting_entities=post_message.entities
                         )
             elif post_message.message:
                 sent_post = await bot_client.send_message(
-                    target_entity,
+                    target_entity_bot,
                     post_message.message,
                     formatting_entities=post_message.entities
                 )
@@ -3268,7 +3276,7 @@ async def handle_forward_comment_command(event, command, parts):
 
                 # 目标频道有 Discussion → 发到讨论群作为回复
                 # 目标频道无 Discussion → 平铺发到目标频道并 reply 帖子
-                send_peer = target_discussion_peer if (target_discussion_peer and reply_to_msg_id) else target_entity
+                send_peer = target_discussion_peer if (target_discussion_peer and reply_to_msg_id) else target_entity_bot
                 send_reply_to = reply_to_msg_id if (target_discussion_peer and reply_to_msg_id) else sent_post.id
 
                 if comment.media:
