@@ -51,6 +51,7 @@ async def handle_bind_command(event, client, parts):
             '/bind https://t.me/source https://t.me/target\n'
             '/bind "源频道" "目标频道" -month 3\n'
             '/bind "源频道" "目标频道" -day 7\n'
+            '/bind "源频道" "目标频道" -hour 12\n'
             '/bind "源频道" "目标频道" -year 1'
         )
         return
@@ -64,6 +65,7 @@ async def handle_bind_command(event, client, parts):
             '-year': 'years', '-y': 'years',
             '-month': 'months', '-m': 'months',
             '-day': 'days', '-d': 'days',
+            '-hour': 'hours', '-h': 'hours',
         }
         _i = 0
         _clean_args = []
@@ -218,13 +220,35 @@ async def handle_bind_command(event, client, parts):
 
         except IntegrityError:
             session.rollback()
-            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
-            await reply_and_delete(event,
-                f'已存在相同的转发规则:\n'
-                f'源聊天: {source_chat_db.name}\n'
-                f'目标聊天: {target_chat_db.name}\n'
-                f'如需修改请使用 /settings 命令'
-            )
+            # 找到已存在的规则，用新的 expire_at 覆盖
+            existing_rule = session.query(ForwardRule).filter_by(
+                source_chat_id=source_chat_db.id,
+                target_chat_id=target_chat_db.id
+            ).first()
+            if existing_rule:
+                existing_rule.expire_at = expire_at
+                session.commit()
+                if expire_at:
+                    _expire_str = expire_at.strftime('%Y-%m-%d %H:%M')
+                    _notice = f'⏳ 到期时间已更新为 {_expire_str}（到期后自动删除）'
+                else:
+                    _notice = '♾️ 已设为永久有效（移除原有到期时间）'
+                await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+                await reply_and_delete(event,
+                    f'✅ 转发规则已存在，到期时间已更新：\n'
+                    f'源聊天: {source_chat_db.name}\n'
+                    f'目标聊天: {target_chat_db.name}\n'
+                    f'{_notice}',
+                    buttons=[Button.inline("⚙️ 打开设置", f"rule_settings:{existing_rule.id}")]
+                )
+            else:
+                await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+                await reply_and_delete(event,
+                    f'已存在相同的转发规则：\n'
+                    f'源聊天: {source_chat_db.name}\n'
+                    f'目标聊天: {target_chat_db.name}\n'
+                    f'如需修改请使用 /settings 命令'
+                )
             return
         finally:
             session.close()
