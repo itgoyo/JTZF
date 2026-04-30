@@ -3035,8 +3035,7 @@ async def handle_forward_comment_command(event, command, parts):
     搬运指定帖子及其评论区内容到目标频道。
     评论以 "💬 用户名：内容" 格式回复到搬运后的帖子下面。
     """
-    from telethon.tl.functions.messages import GetDiscussionMessageRequest, GetRepliesRequest
-    from telethon.errors import ChannelInvalidError, MsgIdInvalidError
+    from telethon.tl.functions.messages import GetDiscussionMessageRequest
 
     # ── 参数校验 ──
     if len(parts) < 4:
@@ -3167,49 +3166,58 @@ async def handle_forward_comment_command(event, command, parts):
             return
 
         # ── Step2: 获取评论区 ──
+        # 原理：频道评论存储在关联的 Discussion 群组里，而不在频道本身。
+        # 必须先通过 GetDiscussionMessageRequest 拿到讨论群 + 锚点消息ID，
+        # 再用 iter_messages(discussion_peer, reply_to=disc_msg_id) 取评论。
         comments = []
-        try:
-            # 优先尝试通过 GetDiscussionMessage 找到评论群的消息，再 GetReplies
-            try:
-                disc_result = await user_client(GetDiscussionMessageRequest(
-                    peer=source_entity,
-                    msg_id=post_id
-                ))
-                # disc_result.messages[0] 是评论群里对应的消息
-                discussion_peer = disc_result.chats[0] if disc_result.chats else None
-                disc_msg_id = disc_result.messages[0].id if disc_result.messages else None
+        discussion_peer = None
+        disc_msg_id = None
 
-                if discussion_peer and disc_msg_id:
-                    replies_result = await user_client(GetRepliesRequest(
-                        peer=discussion_peer,
-                        msg_id=disc_msg_id,
-                        offset_id=0,
-                        offset_date=None,
-                        add_offset=0,
-                        limit=comment_limit or 1000,
-                        max_id=0,
-                        min_id=0,
-                        hash=0
-                    ))
-                    comments = replies_result.messages
-            except Exception as disc_err:
-                logger.info(f'[forward_comment] GetDiscussion 失败，尝试 iter_messages reply: {disc_err}')
-                # 降级：直接 iter_messages 过滤 reply_to == post_id
+        try:
+            disc_result = await user_client(GetDiscussionMessageRequest(
+                peer=source_entity,
+                msg_id=post_id
+            ))
+            if disc_result.chats:
+                discussion_peer = disc_result.chats[0]
+            if disc_result.messages:
+                disc_msg_id = disc_result.messages[0].id
+
+            logger.info(f'[forward_comment] discussion_peer={discussion_peer}, disc_msg_id={disc_msg_id}')
+
+            if discussion_peer and disc_msg_id:
                 async for msg in user_client.iter_messages(
-                    source_entity,
-                    reply_to=post_id,
-                    limit=comment_limit or 1000
+                    discussion_peer,
+                    reply_to=disc_msg_id,
+                    limit=comment_limit or 5000
                 ):
+                    # 跳过服务消息（频道自动生成的锚点消息，没有实际评论内容）
+                    if msg.action is not None:
+                        continue
                     comments.append(msg)
                 comments = list(reversed(comments))  # 按时间正序
+                logger.info(f'[forward_comment] 获取到 {len(comments)} 条评论')
+            else:
+                logger.warning('[forward_comment] 源频道没有关联 Discussion 群，无法获取评论')
 
         except Exception as e:
             logger.warning(f'[forward_comment] 获取评论区出错: {e}')
-            # 评论获取失败不中断，帖子已搬运，告知用户
             try:
                 await status_msg.edit(
-                    f'✅ 帖子已搬运，但获取评论失败: {str(e)}\n'
-                    f'源频道: {source_name} → 目标频道: {target_name}'
+                    f'✅ 帖子已搬运，但获取评论失败\n'
+                    f'原因: {str(e)}\n'
+                    f'（可能源频道没有开启 Discussion 群）'
+                )
+            except Exception:
+                pass
+            return
+
+        if not comments:
+            try:
+                await status_msg.edit(
+                    f'✅ 帖子已搬运\n'
+                    f'源频道: {source_name} → 目标频道: {target_name}\n'
+                    f'ℹ️ 该帖子暂无评论，或源频道未开启 Discussion 群'
                 )
             except Exception:
                 pass
@@ -3219,9 +3227,11 @@ async def handle_forward_comment_command(event, command, parts):
             comments = comments[:comment_limit]
 
         # ── Step3: 检测目标频道是否有 Discussion 群 ──
+        # 等待 Telegram 在目标频道建立讨论链接（通常立即可用）
         reply_to_msg_id = None
         target_discussion_peer = None
         try:
+            await asyncio.sleep(1)  # 给 Telegram 一点时间建立帖子与讨论群的关联
             sent_disc = await user_client(GetDiscussionMessageRequest(
                 peer=target_entity,
                 msg_id=sent_post.id
@@ -3229,8 +3239,9 @@ async def handle_forward_comment_command(event, command, parts):
             if sent_disc.chats:
                 target_discussion_peer = sent_disc.chats[0]
                 reply_to_msg_id = sent_disc.messages[0].id if sent_disc.messages else None
-        except Exception:
-            pass  # 目标没有 Discussion，降级为平铺
+            logger.info(f'[forward_comment] 目标 discussion_peer={target_discussion_peer}, reply_to_msg_id={reply_to_msg_id}')
+        except Exception as e:
+            logger.info(f'[forward_comment] 目标频道无 Discussion 群，降级为平铺模式: {e}')
 
         # ── Step4: 发送评论 ──
         success_count = 0
@@ -3239,84 +3250,60 @@ async def handle_forward_comment_command(event, command, parts):
         for idx, comment in enumerate(comments):
             try:
                 # 构建发送者名称
-                sender = None
+                sender = '匿名用户'
                 if comment.sender:
                     s = comment.sender
+                    title = getattr(s, 'title', '') or ''
                     first = getattr(s, 'first_name', '') or ''
                     last = getattr(s, 'last_name', '') or ''
                     uname = getattr(s, 'username', '') or ''
-                    title = getattr(s, 'title', '') or ''  # 频道/群组名
                     if title:
                         sender = title
                     elif first or last:
                         sender = f'{first} {last}'.strip()
                     elif uname:
                         sender = f'@{uname}'
-                if not sender:
-                    sender = '匿名用户'
 
                 comment_text = comment.message or ''
 
-                if target_discussion_peer and reply_to_msg_id:
-                    # 有 Discussion：发到讨论群作为回复
-                    if comment.media:
-                        file_path = await comment.download_media(
-                            os.path.join(TEMP_DIR, f'fwc_cmt_{comment.id}')
-                        )
-                        if file_path:
-                            try:
-                                caption = f'💬 {sender}：{comment_text}' if comment_text else f'💬 {sender}'
-                                await bot_client.send_file(
-                                    target_discussion_peer,
-                                    file_path,
-                                    caption=caption,
-                                    reply_to=reply_to_msg_id
-                                )
-                            finally:
-                                try:
-                                    os.remove(file_path)
-                                except Exception:
-                                    pass
-                    elif comment_text:
-                        await bot_client.send_message(
-                            target_discussion_peer,
-                            f'💬 {sender}：{comment_text}',
-                            reply_to=reply_to_msg_id
-                        )
-                    else:
-                        success_count += 1
-                        continue
-                else:
-                    # 无 Discussion：平铺发到目标频道，标注是哪条帖子的评论
-                    if comment.media:
-                        file_path = await comment.download_media(
-                            os.path.join(TEMP_DIR, f'fwc_cmt_{comment.id}')
-                        )
-                        if file_path:
-                            try:
-                                caption = f'💬 {sender}：{comment_text}' if comment_text else f'💬 {sender}'
-                                await bot_client.send_file(
-                                    target_entity,
-                                    file_path,
-                                    caption=caption,
-                                    reply_to=sent_post.id
-                                )
-                            finally:
-                                try:
-                                    os.remove(file_path)
-                                except Exception:
-                                    pass
-                    elif comment_text:
-                        await bot_client.send_message(
-                            target_entity,
-                            f'💬 {sender}：{comment_text}',
-                            reply_to=sent_post.id
-                        )
-                    else:
-                        success_count += 1
-                        continue
+                # 目标频道有 Discussion → 发到讨论群作为回复
+                # 目标频道无 Discussion → 平铺发到目标频道并 reply 帖子
+                send_peer = target_discussion_peer if (target_discussion_peer and reply_to_msg_id) else target_entity
+                send_reply_to = reply_to_msg_id if (target_discussion_peer and reply_to_msg_id) else sent_post.id
 
-                success_count += 1
+                if comment.media:
+                    file_path = await comment.download_media(
+                        os.path.join(TEMP_DIR, f'fwc_cmt_{comment.id}')
+                    )
+                    if file_path:
+                        try:
+                            caption = f'💬 {sender}：{comment_text}' if comment_text else f'💬 {sender}'
+                            await bot_client.send_file(
+                                send_peer,
+                                file_path,
+                                caption=caption,
+                                reply_to=send_reply_to
+                            )
+                            success_count += 1
+                        finally:
+                            try:
+                                os.remove(file_path)
+                            except Exception:
+                                pass
+                    else:
+                        fail_count += 1
+                        continue
+                elif comment_text:
+                    await bot_client.send_message(
+                        send_peer,
+                        f'💬 {sender}：{comment_text}',
+                        reply_to=send_reply_to
+                    )
+                    success_count += 1
+                else:
+                    # 既无媒体又无文本（纯表情贴纸之类），跳过
+                    logger.debug(f'[forward_comment] 跳过空评论 msg_id={comment.id}')
+                    continue
 
                 # 每10条更新一次状态
                 if (idx + 1) % 10 == 0:
