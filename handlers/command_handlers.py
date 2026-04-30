@@ -43,7 +43,53 @@ async def handle_bind_command(event, client, parts):
             raise ValueError("参数不足")
     except ValueError:
         await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
-        await reply_and_delete(event,'用法: /bind <源聊天链接或名称> [目标聊天链接或名称]\n例如:\n/bind https://t.me/channel_name\n/bind "频道 名称"\n/bind https://t.me/source_channel https://t.me/target_channel\n/bind "源频道名称" "目标频道名称"')
+        await reply_and_delete(event,
+            '用法: /bind <源聊天链接或名称> [目标聊天链接或名称] [-year/-y N] [-month/-m N] [-day/-d N]\n'
+            '例如:\n'
+            '/bind https://t.me/channel_name\n'
+            '/bind "频道 名称"\n'
+            '/bind https://t.me/source https://t.me/target\n'
+            '/bind "源频道" "目标频道" -month 3\n'
+            '/bind "源频道" "目标频道" -day 7\n'
+            '/bind "源频道" "目标频道" -year 1'
+        )
+        return
+
+    # 解析有效期参数 -year/-y / -month/-m / -day/-d
+    expire_at = None
+    try:
+        from datetime import datetime as _dt
+        from dateutil.relativedelta import relativedelta as _rd
+        _flag_map = {
+            '-year': 'years', '-y': 'years',
+            '-month': 'months', '-m': 'months',
+            '-day': 'days', '-d': 'days',
+        }
+        _i = 0
+        _clean_args = []
+        while _i < len(args):
+            _flag = args[_i].lower()
+            if _flag in _flag_map and _i + 1 < len(args):
+                try:
+                    _n = int(args[_i + 1])
+                    if _n <= 0:
+                        raise ValueError("有效期数值必须大于0")
+                    expire_at = _dt.now() + _rd(**{_flag_map[_flag]: _n})
+                    _i += 2
+                except ValueError as ve:
+                    raise ValueError(f"有效期参数错误: {ve}")
+            else:
+                _clean_args.append(args[_i])
+                _i += 1
+        # 重新提取 source/target（去掉有效期 flag 后）
+        if len(_clean_args) >= 1:
+            source_target = _clean_args[0]
+            target_chat_input = _clean_args[1] if len(_clean_args) >= 2 else target_chat_input
+    except ImportError:
+        logger.warning("dateutil 未安装，有效期参数不可用")
+    except ValueError as ve:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, f'⚠️ {ve}')
         return
 
     # 检查是否是链接
@@ -153,15 +199,20 @@ async def handle_bind_command(event, client, parts):
                 rule.forward_mode = ForwardMode.WHITELIST
                 rule.add_mode = AddMode.WHITELIST
                 
+            if expire_at:
+                rule.expire_at = expire_at
             session.add(rule)
             session.commit()
 
+            _expire_notice = ''
+            if expire_at:
+                _expire_notice = f'\n⏳ 到期时间: {expire_at.strftime("%Y-%m-%d %H:%M")}（到期后自动删除）'
             await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
             await reply_and_delete(event,
                 f'已设置转发规则:\n'
                 f'源聊天: {source_chat_db.name} ({source_chat_db.telegram_chat_id})\n'
                 f'目标聊天: {target_chat_db.name} ({target_chat_db.telegram_chat_id})\n'
-                f'请使用 /add 或 /add_regex 添加关键字',
+                f'请使用 /add 或 /add_regex 添加关键字{_expire_notice}',
                 buttons=[Button.inline("⚙️ 打开设置", f"rule_settings:{rule.id}")]
             )
 
@@ -2725,11 +2776,27 @@ async def handle_list_rule_command(event, command, parts):
             source_chat = rule.source_chat
             target_chat = rule.target_chat
 
+            # 构建到期时间提示
+            from datetime import datetime as _dt_now
+            _expire_str = ''
+            if rule.expire_at:
+                _now = _dt_now.now()
+                _delta = rule.expire_at - _now
+                if _delta.total_seconds() <= 0:
+                    _expire_str = '\n⚠️ 已过期（等待清理）'
+                else:
+                    _days = _delta.days
+                    if _days >= 1:
+                        _expire_str = f'\n⏳ 还剩 {_days} 天（{rule.expire_at.strftime("%Y-%m-%d %H:%M")} 到期）'
+                    else:
+                        _hours = int(_delta.total_seconds() // 3600)
+                        _expire_str = f'\n⏳ 还剩 {_hours} 小时（{rule.expire_at.strftime("%Y-%m-%d %H:%M")} 到期）'
+
             # 构建规则描述
             rule_desc = (
                 f'<b>ID: {rule.id}</b>\n'
                 f'<blockquote>来源: {source_chat.name} ({source_chat.telegram_chat_id})\n'
-                f'目标: {target_chat.name} ({target_chat.telegram_chat_id})\n'
+                f'目标: {target_chat.name} ({target_chat.telegram_chat_id}){_expire_str}\n'
                 '</blockquote>'
             )
             message_parts.append(rule_desc)

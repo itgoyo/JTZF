@@ -12,6 +12,7 @@ import multiprocessing
 from models.db_operations import DBOperations
 from scheduler.summary_scheduler import SummaryScheduler
 from scheduler.chat_updater import ChatUpdater
+from scheduler.expiry_scheduler import ExpiryScheduler
 from handlers.bot_handler import send_welcome_message
 from rss.main import app as rss_app
 from utils.log_config import setup_logging
@@ -39,6 +40,7 @@ db_ops = None
 
 scheduler = None
 chat_updater = None
+expiry_scheduler = None
 
 
 async def init_db_ops():
@@ -98,7 +100,7 @@ async def refresh_dialogs_keepalive(client, interval_seconds=600):
 
 async def start_clients():
     # 初始化 DBOperations
-    global db_ops, scheduler, chat_updater
+    global db_ops, scheduler, chat_updater, expiry_scheduler
     db_ops = await DBOperations.create()
 
     try:
@@ -134,6 +136,10 @@ async def start_clients():
         # 创建并启动聊天信息更新器
         chat_updater = ChatUpdater(user_client)
         await chat_updater.start()
+
+        # 创建并启动到期规则清理调度器
+        expiry_scheduler = ExpiryScheduler()
+        await expiry_scheduler.start()
 
         # 启动 keepalive 任务，定期刷新 dialogs 维持所有频道的消息推送
         keepalive_interval = int(os.getenv('DIALOGS_KEEPALIVE_INTERVAL', '600'))
@@ -178,6 +184,9 @@ async def start_clients():
         # 停止聊天信息更新器
         if chat_updater:
             chat_updater.stop()
+        # 停止到期规则清理调度器
+        if expiry_scheduler:
+            expiry_scheduler.stop()
         # 如果 RSS 服务在运行，停止它
         if 'rss_process' in locals() and rss_process.is_alive():
             rss_process.terminate()

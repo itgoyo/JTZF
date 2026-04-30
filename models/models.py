@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Enum, UniqueConstraint, inspect, text
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Enum, UniqueConstraint, inspect, text, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from enums.enums import ForwardMode, PreviewMode, MessageMode, AddMode, HandleMode
@@ -90,6 +90,9 @@ class ForwardRule(Base):
     enable_ai_rewrite = Column(Boolean, default=False)     # 是否启用AI改写
     ai_rewrite_model = Column(String, nullable=True)       # AI改写使用的模型
     ai_rewrite_prompt = Column(String, nullable=True)      # AI改写的提示词
+
+    # 有效期相关
+    expire_at = Column(DateTime, nullable=True)  # 规则到期时间，NULL 表示永久有效
 
     # 添加唯一约束
     __table_args__ = (
@@ -442,6 +445,7 @@ def migrate_db(engine):
         'enable_ai_rewrite': 'ALTER TABLE forward_rules ADD COLUMN enable_ai_rewrite BOOLEAN DEFAULT FALSE',
         'ai_rewrite_model': 'ALTER TABLE forward_rules ADD COLUMN ai_rewrite_model VARCHAR DEFAULT NULL',
         'ai_rewrite_prompt': 'ALTER TABLE forward_rules ADD COLUMN ai_rewrite_prompt VARCHAR DEFAULT NULL',
+        'expire_at': 'ALTER TABLE forward_rules ADD COLUMN expire_at DATETIME DEFAULT NULL',
     }
 
     keywords_new_columns = {
