@@ -297,6 +297,15 @@ async def register_bot_commands(bot):
             command='remove_delete',
             description='删除删除规则'
         ),
+        # 按钮广告管理
+        BotCommand(
+            command='buttons',
+            description='在转发消息末尾追加内联按钮广告，格式：/buttons 文本 - 链接 && 文本 - 链接'
+        ),
+        BotCommand(
+            command='buttons_off',
+            description='关闭当前规则的按钮广告'
+        ),
         # 导入导出功能
         BotCommand(
             command='export_keyword',
