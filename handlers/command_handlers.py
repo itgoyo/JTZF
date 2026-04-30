@@ -73,10 +73,19 @@ async def handle_bind_command(event, client, parts):
             _flag = args[_i].lower()
             if _flag in _flag_map and _i + 1 < len(args):
                 try:
-                    _n = int(args[_i + 1])
+                    _n = float(args[_i + 1])
                     if _n <= 0:
                         raise ValueError("有效期数值必须大于0")
-                    expire_at = _dt.now() + _rd(**{_flag_map[_flag]: _n})
+                    _unit = _flag_map[_flag]
+                    # relativedelta 不支持小数，统一转为秒数用 timedelta 处理
+                    _unit_to_seconds = {
+                        'years': 365 * 24 * 3600,
+                        'months': 30 * 24 * 3600,
+                        'days': 24 * 3600,
+                        'hours': 3600,
+                    }
+                    from datetime import timedelta as _td
+                    expire_at = _dt.now() + _td(seconds=_n * _unit_to_seconds[_unit])
                     _i += 2
                 except ValueError as ve:
                     raise ValueError(f"有效期参数错误: {ve}")
