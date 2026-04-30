@@ -145,6 +145,8 @@ async def handle_command(client, event):
         'dru': lambda: handle_delete_rss_user_command(event, command, parts),
         'forward': lambda: handle_forward_command(event, command, parts),
         'f': lambda: handle_forward_command(event, 'forward', parts),
+        'forward_comment': lambda: handle_forward_comment_command(event, command, parts),
+        'fc': lambda: handle_forward_comment_command(event, command, parts),
         'source': lambda: handle_source_command(event, parts),
         'src': lambda: handle_source_command(event, parts),
         'preview': lambda: handle_preview_command(event, parts),

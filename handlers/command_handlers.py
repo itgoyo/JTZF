@@ -3028,6 +3028,334 @@ async def get_entity_from_input(client, input_str):
         return None
 
 
+
+async def handle_forward_comment_command(event, command, parts):
+    """处理 /forward_comment 命令
+    用法: /forward_comment <源频道> <目标频道> <消息ID> [数量限制]
+    搬运指定帖子及其评论区内容到目标频道。
+    评论以 "💬 用户名：内容" 格式回复到搬运后的帖子下面。
+    """
+    from telethon.tl.functions.messages import GetDiscussionMessageRequest, GetRepliesRequest
+    from telethon.errors import ChannelInvalidError, MsgIdInvalidError
+
+    # ── 参数校验 ──
+    if len(parts) < 4:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event,
+            '用法:\n'
+            '/forward_comment <源频道> <目标频道> <消息ID> [评论数量限制]\n\n'
+            '示例:\n'
+            '/forward_comment https://t.me/src https://t.me/tgt 123\n'
+            '/forward_comment https://t.me/src https://t.me/tgt 123 50'
+        )
+        return
+
+    try:
+        message_text = event.message.text
+        _, args_text = message_text.split(None, 1)
+        args = shlex.split(args_text)
+
+        if len(args) < 3:
+            raise ValueError("参数不足")
+
+        source_input = args[0]
+        target_input = args[1]
+        post_id = int(args[2])
+        comment_limit = int(args[3]) if len(args) >= 4 else None  # None = 全部
+
+        if comment_limit is not None and comment_limit <= 0:
+            raise ValueError("评论数量限制必须大于0")
+
+    except ValueError as e:
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, f'参数格式错误: {str(e)}\n消息ID必须是数字')
+        return
+
+    try:
+        main = await get_main_module()
+        user_client = main.user_client
+        bot_client = await get_bot_client()
+
+        # ── 解析源频道 ──
+        try:
+            source_entity = await user_client.get_entity(source_input)
+            source_name = getattr(source_entity, 'title', source_input)
+        except Exception as e:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, f'无法获取源频道: {str(e)}')
+            return
+
+        # ── 解析目标频道 ──
+        try:
+            target_entity = await user_client.get_entity(target_input)
+            target_name = getattr(target_entity, 'title', target_input)
+        except Exception as e:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, f'无法获取目标频道: {str(e)}')
+            return
+
+        # ── 获取原帖子 ──
+        try:
+            post_message = await user_client.get_messages(source_entity, ids=post_id)
+        except Exception as e:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, f'无法获取消息 ID={post_id}: {str(e)}')
+            return
+
+        if not post_message:
+            await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+            await reply_and_delete(event, f'消息 ID={post_id} 不存在')
+            return
+
+        # ── 发送状态消息 ──
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        status_msg = await respond_and_delete(event,
+            f'⏳ 开始搬运帖子和评论...\n'
+            f'源频道: {source_name}\n'
+            f'目标频道: {target_name}\n'
+            f'帖子 ID: {post_id}'
+        )
+
+        # ── Step1: 搬运帖子本体 ──
+        sent_post = None
+        try:
+            if post_message.media:
+                file_path = await post_message.download_media(
+                    os.path.join(TEMP_DIR, f'fwc_post_{post_id}')
+                )
+                if file_path:
+                    try:
+                        sent_post = await bot_client.send_file(
+                            target_entity,
+                            file_path,
+                            caption=post_message.message or None,
+                            formatting_entities=post_message.entities
+                        )
+                    finally:
+                        try:
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
+                        except Exception:
+                            pass
+                else:
+                    # 媒体下载失败，只发文本
+                    if post_message.message:
+                        sent_post = await bot_client.send_message(
+                            target_entity,
+                            post_message.message,
+                            formatting_entities=post_message.entities
+                        )
+            elif post_message.message:
+                sent_post = await bot_client.send_message(
+                    target_entity,
+                    post_message.message,
+                    formatting_entities=post_message.entities
+                )
+        except Exception as e:
+            logger.error(f'[forward_comment] 搬运帖子本体出错: {e}')
+            try:
+                await status_msg.edit(f'❌ 搬运帖子失败: {str(e)}')
+            except Exception:
+                pass
+            return
+
+        if not sent_post:
+            try:
+                await status_msg.edit('❌ 帖子搬运失败（无内容）')
+            except Exception:
+                pass
+            return
+
+        # ── Step2: 获取评论区 ──
+        comments = []
+        try:
+            # 优先尝试通过 GetDiscussionMessage 找到评论群的消息，再 GetReplies
+            try:
+                disc_result = await user_client(GetDiscussionMessageRequest(
+                    peer=source_entity,
+                    msg_id=post_id
+                ))
+                # disc_result.messages[0] 是评论群里对应的消息
+                discussion_peer = disc_result.chats[0] if disc_result.chats else None
+                disc_msg_id = disc_result.messages[0].id if disc_result.messages else None
+
+                if discussion_peer and disc_msg_id:
+                    replies_result = await user_client(GetRepliesRequest(
+                        peer=discussion_peer,
+                        msg_id=disc_msg_id,
+                        offset_id=0,
+                        offset_date=None,
+                        add_offset=0,
+                        limit=comment_limit or 1000,
+                        max_id=0,
+                        min_id=0,
+                        hash=0
+                    ))
+                    comments = replies_result.messages
+            except Exception as disc_err:
+                logger.info(f'[forward_comment] GetDiscussion 失败，尝试 iter_messages reply: {disc_err}')
+                # 降级：直接 iter_messages 过滤 reply_to == post_id
+                async for msg in user_client.iter_messages(
+                    source_entity,
+                    reply_to=post_id,
+                    limit=comment_limit or 1000
+                ):
+                    comments.append(msg)
+                comments = list(reversed(comments))  # 按时间正序
+
+        except Exception as e:
+            logger.warning(f'[forward_comment] 获取评论区出错: {e}')
+            # 评论获取失败不中断，帖子已搬运，告知用户
+            try:
+                await status_msg.edit(
+                    f'✅ 帖子已搬运，但获取评论失败: {str(e)}\n'
+                    f'源频道: {source_name} → 目标频道: {target_name}'
+                )
+            except Exception:
+                pass
+            return
+
+        if comment_limit:
+            comments = comments[:comment_limit]
+
+        # ── Step3: 检测目标频道是否有 Discussion 群 ──
+        reply_to_msg_id = None
+        target_discussion_peer = None
+        try:
+            sent_disc = await user_client(GetDiscussionMessageRequest(
+                peer=target_entity,
+                msg_id=sent_post.id
+            ))
+            if sent_disc.chats:
+                target_discussion_peer = sent_disc.chats[0]
+                reply_to_msg_id = sent_disc.messages[0].id if sent_disc.messages else None
+        except Exception:
+            pass  # 目标没有 Discussion，降级为平铺
+
+        # ── Step4: 发送评论 ──
+        success_count = 0
+        fail_count = 0
+
+        for idx, comment in enumerate(comments):
+            try:
+                # 构建发送者名称
+                sender = None
+                if comment.sender:
+                    s = comment.sender
+                    first = getattr(s, 'first_name', '') or ''
+                    last = getattr(s, 'last_name', '') or ''
+                    uname = getattr(s, 'username', '') or ''
+                    title = getattr(s, 'title', '') or ''  # 频道/群组名
+                    if title:
+                        sender = title
+                    elif first or last:
+                        sender = f'{first} {last}'.strip()
+                    elif uname:
+                        sender = f'@{uname}'
+                if not sender:
+                    sender = '匿名用户'
+
+                comment_text = comment.message or ''
+
+                if target_discussion_peer and reply_to_msg_id:
+                    # 有 Discussion：发到讨论群作为回复
+                    if comment.media:
+                        file_path = await comment.download_media(
+                            os.path.join(TEMP_DIR, f'fwc_cmt_{comment.id}')
+                        )
+                        if file_path:
+                            try:
+                                caption = f'💬 {sender}：{comment_text}' if comment_text else f'💬 {sender}'
+                                await bot_client.send_file(
+                                    target_discussion_peer,
+                                    file_path,
+                                    caption=caption,
+                                    reply_to=reply_to_msg_id
+                                )
+                            finally:
+                                try:
+                                    os.remove(file_path)
+                                except Exception:
+                                    pass
+                    elif comment_text:
+                        await bot_client.send_message(
+                            target_discussion_peer,
+                            f'💬 {sender}：{comment_text}',
+                            reply_to=reply_to_msg_id
+                        )
+                    else:
+                        success_count += 1
+                        continue
+                else:
+                    # 无 Discussion：平铺发到目标频道，标注是哪条帖子的评论
+                    if comment.media:
+                        file_path = await comment.download_media(
+                            os.path.join(TEMP_DIR, f'fwc_cmt_{comment.id}')
+                        )
+                        if file_path:
+                            try:
+                                caption = f'💬 {sender}：{comment_text}' if comment_text else f'💬 {sender}'
+                                await bot_client.send_file(
+                                    target_entity,
+                                    file_path,
+                                    caption=caption,
+                                    reply_to=sent_post.id
+                                )
+                            finally:
+                                try:
+                                    os.remove(file_path)
+                                except Exception:
+                                    pass
+                    elif comment_text:
+                        await bot_client.send_message(
+                            target_entity,
+                            f'💬 {sender}：{comment_text}',
+                            reply_to=sent_post.id
+                        )
+                    else:
+                        success_count += 1
+                        continue
+
+                success_count += 1
+
+                # 每10条更新一次状态
+                if (idx + 1) % 10 == 0:
+                    try:
+                        await status_msg.edit(
+                            f'⏳ 搬运评论中...\n'
+                            f'进度: {idx + 1}/{len(comments)}\n'
+                            f'✅ 成功: {success_count}  ❌ 失败: {fail_count}'
+                        )
+                    except Exception:
+                        pass
+
+                await asyncio.sleep(0.5)
+
+            except Exception as e:
+                logger.error(f'[forward_comment] 发送评论 {comment.id} 出错: {e}')
+                fail_count += 1
+
+        # ── 完成 ──
+        limit_str = f'（限制 {comment_limit} 条）' if comment_limit else '（全部）'
+        try:
+            await status_msg.edit(
+                f'✅ 搬运完成！\n\n'
+                f'源频道: {source_name}\n'
+                f'目标频道: {target_name}\n'
+                f'帖子 ID: {post_id}\n'
+                f'评论搬运: {limit_str}\n\n'
+                f'✅ 成功: {success_count}\n'
+                f'❌ 失败: {fail_count}'
+            )
+        except Exception:
+            await respond_and_delete(event,
+                f'✅ 搬运完成！成功 {success_count} 条，失败 {fail_count} 条'
+            )
+
+    except Exception as e:
+        logger.error(f'[forward_comment] 出错: {str(e)}\n{traceback.format_exc()}')
+        await respond_and_delete(event, f'搬运时出错: {str(e)}')
+
 async def handle_forward_command(event, command, parts):
     """处理 forward 批量转发命令 - 参考bot.py实现"""
     if len(parts) < 5:

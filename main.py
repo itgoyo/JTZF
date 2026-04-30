@@ -221,6 +221,10 @@ async def register_bot_commands(bot):
             command='forward',
             description='批量转发指定范围的消息（保持原始格式）'
         ),
+        BotCommand(
+            command='forward_comment',
+            description='搬运帖子及其评论区内容，格式：/forward_comment 源频道 目标频道 消息ID [数量]'
+        ),
         # 查看消息原始内容
         BotCommand(
             command='source',
