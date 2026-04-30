@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Enum, UniqueConstraint, inspect, text, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Enum, UniqueConstraint, inspect, text, DateTime, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from enums.enums import ForwardMode, PreviewMode, MessageMode, AddMode, HandleMode
@@ -90,6 +90,13 @@ class ForwardRule(Base):
     enable_ai_rewrite = Column(Boolean, default=False)     # 是否启用AI改写
     ai_rewrite_model = Column(String, nullable=True)       # AI改写使用的模型
     ai_rewrite_prompt = Column(String, nullable=True)      # AI改写的提示词
+
+    # 智能广告相关字段
+    enable_smart_ad = Column(Boolean, default=False)       # 是否启用智能广告
+    smart_ad_threshold = Column(Float, nullable=True)      # 匹配阈值（默认0.7）
+    smart_ad_max_count = Column(Integer, default=3)        # 单条消息最多广告数
+    smart_ad_cooldown = Column(Integer, default=30)        # 广告冷却时间（分钟）
+    smart_ad_model = Column(String, nullable=True)         # 智能广告使用的AI模型
 
     # 有效期相关
     expire_at = Column(DateTime, nullable=True)  # 规则到期时间，NULL 表示永久有效
@@ -446,6 +453,12 @@ def migrate_db(engine):
         'ai_rewrite_model': 'ALTER TABLE forward_rules ADD COLUMN ai_rewrite_model VARCHAR DEFAULT NULL',
         'ai_rewrite_prompt': 'ALTER TABLE forward_rules ADD COLUMN ai_rewrite_prompt VARCHAR DEFAULT NULL',
         'expire_at': 'ALTER TABLE forward_rules ADD COLUMN expire_at DATETIME DEFAULT NULL',
+        # 智能广告字段
+        'enable_smart_ad': 'ALTER TABLE forward_rules ADD COLUMN enable_smart_ad BOOLEAN DEFAULT FALSE',
+        'smart_ad_threshold': 'ALTER TABLE forward_rules ADD COLUMN smart_ad_threshold REAL DEFAULT 0.7',
+        'smart_ad_max_count': 'ALTER TABLE forward_rules ADD COLUMN smart_ad_max_count INTEGER DEFAULT 3',
+        'smart_ad_cooldown': 'ALTER TABLE forward_rules ADD COLUMN smart_ad_cooldown INTEGER DEFAULT 30',
+        'smart_ad_model': 'ALTER TABLE forward_rules ADD COLUMN smart_ad_model VARCHAR DEFAULT NULL',
     }
 
     keywords_new_columns = {

@@ -8,6 +8,7 @@ from handlers.button.callback.ai_tag_callback import *
 from handlers.button.callback.media_callback import *
 from handlers.button.callback.other_callback import *
 from handlers.button.callback.push_callback import *
+from handlers.button.callback.smart_ad_callback import *
 import logging
 import aiohttp
 from utils.constants import RSS_HOST, RSS_PORT
@@ -730,4 +731,14 @@ CALLBACK_HANDLERS = {
     'select_ai_rewrite_model': callback_select_ai_rewrite_model,
     'set_ai_rewrite_prompt': callback_set_ai_rewrite_prompt,
     'cancel_set_ai_enhance': callback_cancel_set_ai_enhance,
+    # 智能广告设置
+    'smart_ad_settings': callback_smart_ad_settings,
+    'toggle_smart_ad': callback_toggle_smart_ad,
+    'smart_ad_threshold': callback_smart_ad_threshold,
+    'smart_ad_max_count': callback_smart_ad_max_count,
+    'smart_ad_cooldown': callback_smart_ad_cooldown,
+    'change_smart_ad_model': callback_change_smart_ad_model,
+    'select_smart_ad_model': callback_select_smart_ad_model,
+    'reload_smart_ad_config': callback_reload_smart_ad_config,
+    'view_smart_ad_list': callback_view_smart_ad_list,
 }

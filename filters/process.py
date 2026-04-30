@@ -16,6 +16,7 @@ from filters.delay_filter import DelayFilter
 from filters.edit_filter import EditFilter
 from filters.comment_button_filter import CommentButtonFilter
 from filters.custom_buttons_filter import CustomButtonsFilter
+from filters.smart_ad_filter import SmartAdFilter
 from filters.init_filter import InitFilter
 from filters.reply_filter import ReplyFilter
 from filters.rss_filter import RSSFilter
@@ -85,6 +86,9 @@ async def process_forward_rule(client, event, chat_id, rule):
 
     # 添加自定义广告按钮过滤器（/buttons）
     filter_chain.add_filter(CustomButtonsFilter())
+
+    # 添加智能广告过滤器（AI语义匹配，自动追加广告按钮）
+    filter_chain.add_filter(SmartAdFilter())
 
     # 添加RSS过滤器
     filter_chain.add_filter(RSSFilter())

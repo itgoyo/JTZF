@@ -1,0 +1,174 @@
+# 智能广告配置文件
+# 支持热重载：在 bot 设置页面点击「重载配置」或 /reload 命令
+# 
+# 字段说明：
+#   id            - 广告唯一标识（英文，不重复）
+#   name          - 广告名称
+#   url           - 跳转链接
+#   emoji         - 表情符号（显示在按钮文字前）
+#   categories    - 关键词提示列表（辅助AI匹配，英文/中文均可）
+#   ai_description - 自然语言描述，告诉AI此广告适合哪类帖子场景
+#   priority      - 同类广告排序，数字越小越优先（同类多条时生效）
+#   enabled       - 是否启用此条广告（true/false）
+
+ads:
+
+  # ── 交易所类 ──────────────────────────────────────────────────────
+
+  - id: binance
+    name: 币安
+    url: "https://accounts.binance.com/zh-CN/register?ref=FANXIAN"
+    emoji: "🔥"
+    categories: [币安, BNB, Binance, 合约, 现货, 加密货币, 数字货币, 比特币, 以太坊, 山寨币, 手续费, 币圈, 交易所, 注册]
+    ai_description: "全球最大加密货币交易所币安，支持现货和合约交易，注册可减免40%手续费。适合帖子讨论：加密货币买卖、BTC/ETH等币种行情涨跌、合约/现货操作、币安相关内容、交易所选择、加密货币投资机会等场景。"
+    priority: 1
+    enabled: true
+
+  - id: okx
+    name: 欧易OKX
+    url: "https://www.okx.com/zh-hans/join/50253981"
+    emoji: "🔥"
+    categories: [欧易, OKX, 合约, 现货, 加密货币, 数字货币, 比特币, 手续费, 币圈, 交易所]
+    ai_description: "知名加密货币交易所欧易OKX，支持现货合约交易，注册减免30%手续费。适合帖子讨论：加密货币交易、合约操作、币种行情、欧易相关内容、交易所选择等场景。"
+    priority: 2
+    enabled: true
+
+  - id: bybit
+    name: ByBit
+    url: "https://www.bybit.com/invite?ref=66QLX94"
+    emoji: "🔥"
+    categories: [ByBit, 合约, 现货, 加密货币, 数字货币, 比特币, 手续费, 币圈, 交易所, 衍生品]
+    ai_description: "加密货币衍生品交易所ByBit，专注合约交易，注册减免30%手续费。适合帖子讨论：合约交易、加密货币衍生品、ByBit相关内容、杠杆交易等场景。"
+    priority: 3
+    enabled: true
+
+  - id: bitget
+    name: Bitget
+    url: "https://www.bitget.com/zh-CN/referral/register?clacCode=4BUM7GXX"
+    emoji: "🔥"
+    categories: [Bitget, 合约, 现货, 加密货币, 跟单, 复制交易, 手续费, 币圈, 交易所]
+    ai_description: "加密货币交易所Bitget，特色跟单交易功能，注册减免30%手续费。适合帖子讨论：跟单交易、复制交易、加密货币交易、Bitget相关内容等场景。"
+    priority: 4
+    enabled: true
+
+  - id: gate
+    name: Gate.io
+    url: "https://www.gatenode.xyz/share/USDTOKOK"
+    emoji: "🔥"
+    categories: [Gate, Gate.io, 合约, 现货, 加密货币, 山寨币, 新币, 手续费, 币圈, 交易所]
+    ai_description: "老牌加密货币交易所Gate.io，山寨币品种丰富，注册减免40%手续费。适合帖子讨论：山寨币交易、新币上线、加密货币投资、Gate相关内容等场景。"
+    priority: 5
+    enabled: true
+
+  - id: htx
+    name: 火币HTX
+    url: "https://www.htx.com.am/invite/zh-cn/1f?invite_code=xpi6a223"
+    emoji: "🔥"
+    categories: [火币, HTX, Huobi, 合约, 现货, 加密货币, 手续费, 币圈, 交易所]
+    ai_description: "老牌加密货币交易所火币HTX，注册减免30%手续费。适合帖子讨论：加密货币交易、火币相关内容、交易所比较等场景。"
+    priority: 6
+    enabled: true
+
+  - id: mexc
+    name: 抹茶MEXC
+    url: "https://promote.mexc.com/r/wIE7fPvG"
+    emoji: "🔥"
+    categories: [抹茶, MEXC, 合约, 现货, 加密货币, 山寨币, 新币, 手续费, 币圈, 交易所]
+    ai_description: "加密货币交易所抹茶MEXC，新币上线快，注册减免40%手续费。适合帖子讨论：新币交易、山寨币机会、加密货币投资、MEXC相关内容等场景。"
+    priority: 7
+    enabled: true
+
+  # ── TRX/波场类 ───────────────────────────────────────────────────
+
+  - id: trx_energy
+    name: 能量租赁
+    url: "https://t.me/trxsosobot"
+    emoji: "💎"
+    categories: [TRX, 波场, TRON, 能量, 带宽, 链上转账, Gas费, USDT转账, TRC20]
+    ai_description: "TRX能量租赁机器人，可低价租赁波场能量用于TRC20 USDT转账，节省Gas费。适合帖子讨论：TRX/波场相关、USDT链上转账、节省能量手续费、TRC20转账、波场网络操作等场景。"
+    priority: 1
+    enabled: true
+
+  # ── Telegram会员类 ──────────────────────────────────────────────
+
+  - id: tg_premium
+    name: 低价TG会员
+    url: "https://t.me/kttgvip_bot"
+    emoji: "💎"
+    categories: [Telegram Premium, TG会员, 电报会员, Premium, 会员, 付费功能, 无广告, 文件上传]
+    ai_description: "低价购买Telegram Premium会员机器人，价格优惠。适合帖子讨论：Telegram会员功能、Premium订阅、TG付费功能、如何开通会员、会员优惠等场景。"
+    priority: 1
+    enabled: true
+
+  # ── 店铺类 ──────────────────────────────────────────────────────
+
+  - id: shop
+    name: 电报哥的店铺
+    url: "https://faka.tg10000.com"
+    emoji: "💰"
+    categories: [购买, 资源, 店铺, 账号, 软件, 服务]
+    ai_description: "电报哥的数字商品店铺，销售各类资源和服务。适合帖子讨论：购买数字资源、账号、工具软件等通用购买场景（低优先级，兜底使用）。"
+    priority: 10
+    enabled: true
+
+  # ── 导航类 ──────────────────────────────────────────────────────
+
+  - id: tg_nav
+    name: 频道群组导航
+    url: "https://tg10000.com"
+    emoji: "🎯"
+    categories: [频道, 群组, Telegram导航, 找资源, 推荐频道, TG资源, 电报]
+    ai_description: "Telegram频道群组导航站，收录优质频道和群组。适合帖子讨论：推荐好的Telegram频道、找资源群组、Telegram内容发现、分享优质频道等场景。"
+    priority: 1
+    enabled: true
+
+  # ── 机场/VPN类 ──────────────────────────────────────────────────
+
+  - id: vpn_nav
+    name: 机场节点大全
+    url: "https://vpnnav.github.io"
+    emoji: "🛫"
+    categories: [机场, 节点, VPN, 翻墙, 科学上网, 代理, 梯子, Shadowsocks, V2Ray, Trojan, Clash, 上外网]
+    ai_description: "VPN机场导航站，收录各类科学上网工具和机场服务。适合帖子讨论：翻墙、科学上网、VPN推荐、机场测评、节点分享、网络代理、访问被封锁网站等场景。"
+    priority: 1
+    enabled: true
+
+  - id: cheap_vpn
+    name: 赔钱机场3元/月
+    url: "https://bit.ly/4raotSL"
+    emoji: "🛫"
+    categories: [机场, 节点, VPN, 翻墙, 科学上网, 便宜机场, 低价VPN, 代理]
+    ai_description: "超低价机场服务，3元/月起，性价比极高。适合帖子讨论：便宜机场、低价VPN、省钱翻墙方案、机场推荐等场景。"
+    priority: 2
+    enabled: true
+
+  # ── AI工具类 ─────────────────────────────────────────────────────
+
+  - id: ai_undress
+    name: 小爱AI去衣
+    url: "https://t.me/Xai1314bot?start=U0HSDEJM1525Y3AF"
+    emoji: "👚"
+    categories: [AI工具, AI图片, 去衣, 换装, 娱乐, AI生成, 图片处理]
+    ai_description: "AI图片处理机器人，提供去衣换装等娱乐功能。适合帖子讨论：AI图片工具、图像处理、娱乐向AI应用等场景。"
+    priority: 1
+    enabled: true
+
+  # ── 搜索工具类 ──────────────────────────────────────────────────
+
+  - id: search_bot_1
+    name: 搜索机器人①
+    url: "https://t.me/soso?start=a_7202424896"
+    emoji: "🤖"
+    categories: [搜索, 找资源, 机器人, 搜索引擎, Telegram搜索]
+    ai_description: "Telegram搜索机器人，可搜索频道消息和资源。适合帖子讨论：找资源、搜索内容、Telegram搜索功能推荐等场景。"
+    priority: 1
+    enabled: true
+
+  - id: search_bot_2
+    name: 搜索机器人②
+    url: "https://t.me/jiso?start=a_7202424896"
+    emoji: "🤖"
+    categories: [搜索, 找资源, 机器人, 搜索引擎, Telegram搜索]
+    ai_description: "Telegram搜索机器人，可搜索频道消息和资源。适合帖子讨论：找资源、搜索内容、Telegram搜索功能推荐等场景（第二搜索入口）。"
+    priority: 2
+    enabled: true

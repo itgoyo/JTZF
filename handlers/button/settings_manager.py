@@ -702,11 +702,15 @@ async def create_buttons(rule):
                     f"ai_enhance_settings:{rule.id}"
                 ),
                 Button.inline(
-                    "🎬 媒体设置",
-                    f"media_settings:{rule.id}"
+                    "💰 智能广告",
+                    f"smart_ad_settings:{rule.id}"
                 )
             ])
             buttons.append([
+                Button.inline(
+                    "🎬 媒体设置",
+                    f"media_settings:{rule.id}"
+                ),
                 Button.inline(
                     "➕ 其他设置",
                     f"other_settings:{rule.id}"
