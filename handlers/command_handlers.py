@@ -365,42 +365,90 @@ async def handle_settings_command(event, command, parts):
         session.close()
 
 async def handle_switch_command(event):
-    """处理 switch 命令"""
-    # 显示可切换的规则列表
+    """处理 switch 命令。
+    
+    - 频道/群组：展示以当前聊天为 target 的所有规则（原有行为）
+    - 私聊（chat.id == USER_ID）：展示系统中所有规则，选择后写入
+      private chat 记录的 current_add_id + current_target_id
+    """
     current_chat = await event.get_chat()
     current_chat_id = str(current_chat.id)
+    user_id_str = os.getenv('USER_ID')
+    is_private_chat = (user_id_str is not None and current_chat_id == str(user_id_str))
 
     session = get_session()
     try:
-        current_chat_db = session.query(Chat).filter(
-            Chat.telegram_chat_id == current_chat_id
-        ).first()
+        if is_private_chat:
+            # ── 私聊模式：展示所有转发规则 ──
+            all_rules = session.query(ForwardRule).all()
+            if not all_rules:
+                await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+                await reply_and_delete(event, '没有任何转发规则，请先使用 /bind 绑定规则')
+                return
 
-        if not current_chat_db:
+            # 确保私聊 Chat 记录存在（不存在则创建，用于存储选择状态）
+            private_chat_db = session.query(Chat).filter(
+                Chat.telegram_chat_id == current_chat_id
+            ).first()
+            if not private_chat_db:
+                private_chat_db = Chat(
+                    telegram_chat_id=current_chat_id,
+                    name='私聊管理'
+                )
+                session.add(private_chat_db)
+                session.flush()
+
+            current_source = private_chat_db.current_add_id
+            current_target = private_chat_db.current_target_id
+
+            buttons = []
+            for rule in all_rules:
+                source_chat = rule.source_chat
+                target_chat = rule.target_chat
+                if not source_chat or not target_chat:
+                    continue
+                is_current = (
+                    source_chat.telegram_chat_id == current_source and
+                    target_chat.telegram_chat_id == current_target
+                )
+                button_text = f'{"✓ " if is_current else ""}来自: {source_chat.name} → {target_chat.name}'
+                callback_data = f'switch_pm:{source_chat.telegram_chat_id}:{target_chat.telegram_chat_id}'
+                buttons.append([Button.inline(button_text, callback_data)])
+
+            session.commit()
             await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
-            await reply_and_delete(event,'当前聊天没有任何转发规则')
-            return
+            await reply_and_delete(event, '请选择要管理的转发规则（来源 → 目标）:', buttons=buttons)
+        else:
+            # ── 原有逻辑：频道/群组中展示以当前聊天为 target 的规则 ──
+            current_chat_db = session.query(Chat).filter(
+                Chat.telegram_chat_id == current_chat_id
+            ).first()
 
-        rules = session.query(ForwardRule).filter(
-            ForwardRule.target_chat_id == current_chat_db.id
-        ).all()
+            if not current_chat_db:
+                await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+                await reply_and_delete(event, '当前聊天没有任何转发规则')
+                return
 
-        if not rules:
+            rules = session.query(ForwardRule).filter(
+                ForwardRule.target_chat_id == current_chat_db.id
+            ).all()
+
+            if not rules:
+                await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+                await reply_and_delete(event, '当前聊天没有任何转发规则')
+                return
+
+            # 创建规则选择按钮
+            buttons = []
+            for rule in rules:
+                source_chat = rule.source_chat
+                # 标记当前选中的规则
+                current = current_chat_db.current_add_id == source_chat.telegram_chat_id
+                button_text = f'{"✓ " if current else ""}来自: {source_chat.name}'
+                callback_data = f"switch:{source_chat.telegram_chat_id}"
+                buttons.append([Button.inline(button_text, callback_data)])
             await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
-            await reply_and_delete(event,'当前聊天没有任何转发规则')
-            return
-
-        # 创建规则选择按钮
-        buttons = []
-        for rule in rules:
-            source_chat = rule.source_chat
-            # 标记当前选中的规则
-            current = current_chat_db.current_add_id == source_chat.telegram_chat_id
-            button_text = f'{"✓ " if current else ""}来自: {source_chat.name}'
-            callback_data = f"switch:{source_chat.telegram_chat_id}"
-            buttons.append([Button.inline(button_text, callback_data)])
-        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
-        await reply_and_delete(event,'请选择要管理的转发规则:', buttons=buttons)
+            await reply_and_delete(event, '请选择要管理的转发规则:', buttons=buttons)
     finally:
         session.close()
 

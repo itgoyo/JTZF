@@ -56,11 +56,21 @@ async def get_user_id():
 
 
 async def get_current_rule(session, event):
-    """获取当前选中的规则"""
+    """获取当前选中的规则。
+    
+    支持两种上下文：
+    1. 频道/群组：当前聊天本身就是 target，current_add_id 指向 source
+    2. 私聊（chat.id == USER_ID）：current_add_id 指向 source，
+       current_target_id 指向用户在 /switch 里选定的 target
+    """
     try:
         # 获取当前聊天
         current_chat = await event.get_chat()
         logger.info(f'获取当前聊天: {current_chat.id}')
+
+        # 判断是否在与 bot 的私聊中（chat_id == USER_ID）
+        user_id_str = os.getenv('USER_ID')
+        is_private_chat = (user_id_str is not None and str(current_chat.id) == str(user_id_str))
 
         current_chat_db = session.query(Chat).filter(
             Chat.telegram_chat_id == str(current_chat.id)
@@ -68,12 +78,12 @@ async def get_current_rule(session, event):
 
         if not current_chat_db or not current_chat_db.current_add_id:
             logger.info('未找到当前聊天或未选择源聊天')
-            await reply_and_delete(event,'请先使用 /switch 选择一个源聊天')
+            await reply_and_delete(event, '请先使用 /switch 选择一个规则')
             return None
 
         logger.info(f'当前选中的源聊天ID: {current_chat_db.current_add_id}')
 
-        # 查找对应的规则
+        # 查找源聊天
         source_chat = session.query(Chat).filter(
             Chat.telegram_chat_id == current_chat_db.current_add_id
         ).first()
@@ -82,16 +92,41 @@ async def get_current_rule(session, event):
             logger.info(f'找到源聊天: {source_chat.name}')
         else:
             logger.error('未找到源聊天')
+            await reply_and_delete(event, '未找到源聊天，请重新使用 /switch 选择规则')
             return None
 
-        rule = session.query(ForwardRule).filter(
-            ForwardRule.source_chat_id == source_chat.id,
-            ForwardRule.target_chat_id == current_chat_db.id
-        ).first()
+        if is_private_chat:
+            # 私聊上下文：target 由 current_target_id 指定，而非当前聊天
+            if not current_chat_db.current_target_id:
+                logger.info('私聊中未选择目标聊天')
+                await reply_and_delete(event, '请先使用 /switch 选择一个转发规则（来源 → 目标）')
+                return None
+
+            target_chat = session.query(Chat).filter(
+                Chat.telegram_chat_id == current_chat_db.current_target_id
+            ).first()
+
+            if not target_chat:
+                logger.error('私聊中未找到目标聊天')
+                await reply_and_delete(event, '未找到目标聊天，请重新使用 /switch 选择规则')
+                return None
+
+            logger.info(f'私聊模式：source={source_chat.name}, target={target_chat.name}')
+
+            rule = session.query(ForwardRule).filter(
+                ForwardRule.source_chat_id == source_chat.id,
+                ForwardRule.target_chat_id == target_chat.id
+            ).first()
+        else:
+            # 频道/群组上下文：当前聊天本身就是 target（原有逻辑）
+            rule = session.query(ForwardRule).filter(
+                ForwardRule.source_chat_id == source_chat.id,
+                ForwardRule.target_chat_id == current_chat_db.id
+            ).first()
 
         if not rule:
             logger.info('未找到对应的转发规则')
-            await reply_and_delete(event,'转发规则不存在')
+            await reply_and_delete(event, '转发规则不存在')
             return None
 
         logger.info(f'找到转发规则 ID: {rule.id}')
@@ -99,7 +134,7 @@ async def get_current_rule(session, event):
     except Exception as e:
         logger.error(f'获取当前规则时出错: {str(e)}')
         logger.exception(e)
-        await reply_and_delete(event,'获取当前规则时出错，请检查日志')
+        await reply_and_delete(event, '获取当前规则时出错，请检查日志')
         return None
 
 

@@ -16,6 +16,8 @@ class Chat(Base):
     telegram_chat_id = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=True)
     current_add_id = Column(String, nullable=True)
+    # 私聊管理时选中的"目标聊天"的 telegram_chat_id（仅私聊上下文使用）
+    current_target_id = Column(String, nullable=True)
 
     # 关系
     source_rules = relationship('ForwardRule', foreign_keys='ForwardRule.source_chat_id', back_populates='source_chat')
@@ -402,6 +404,20 @@ def migrate_db(engine):
 
     # 检查Keyword表的现有列
     keyword_columns = {column['name'] for column in inspector.get_columns('keywords')}
+
+    # 检查chats表的现有列，并迁移新字段
+    chats_columns = {column['name'] for column in inspector.get_columns('chats')}
+    chats_new_columns = {
+        'current_target_id': 'ALTER TABLE chats ADD COLUMN current_target_id VARCHAR DEFAULT NULL',
+    }
+    with engine.connect() as connection:
+        for column, sql in chats_new_columns.items():
+            if column not in chats_columns:
+                try:
+                    connection.execute(text(sql))
+                    logging.info(f'已添加 chats 表列: {column}')
+                except Exception as e:
+                    logging.error(f'添加 chats 表列 {column} 时出错: {str(e)}')
 
     # 需要添加的新列及其默认值
     forward_rules_new_columns = {

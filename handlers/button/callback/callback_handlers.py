@@ -64,6 +64,71 @@ async def callback_switch(event, rule_id, session, message, data):
     ).first()
     await event.answer(f'已切换到: {source_chat.name if source_chat else "未知聊天"}')
 
+
+async def callback_switch_pm(event, rule_id, session, message, data):
+    """处理私聊中切换规则的回调。
+    
+    rule_id 格式为 "source_telegram_id:target_telegram_id"（由 switch_pm callback data 解析得到）。
+    更新私聊 Chat 记录的 current_add_id（source）和 current_target_id（target）。
+    """
+    # 解析 source 和 target
+    parts = rule_id.split(':', 1)
+    if len(parts) != 2:
+        await event.answer('数据格式错误，请重新使用 /switch')
+        return
+
+    source_telegram_id, target_telegram_id = parts
+
+    # 获取当前聊天（私聊）
+    current_chat = await event.get_chat()
+    current_chat_db = session.query(Chat).filter(
+        Chat.telegram_chat_id == str(current_chat.id)
+    ).first()
+
+    if not current_chat_db:
+        await event.answer('当前聊天记录不存在，请重新发送 /switch')
+        return
+
+    # 已经选中同一规则则不重复操作
+    if (current_chat_db.current_add_id == source_telegram_id and
+            current_chat_db.current_target_id == target_telegram_id):
+        await event.answer('已经选中该规则')
+        return
+
+    # 更新 source 和 target 选择
+    current_chat_db.current_add_id = source_telegram_id
+    current_chat_db.current_target_id = target_telegram_id
+    session.commit()
+
+    # 刷新按钮显示，更新 ✓ 标记
+    all_rules = session.query(ForwardRule).all()
+    buttons = []
+    for rule in all_rules:
+        src = rule.source_chat
+        tgt = rule.target_chat
+        if not src or not tgt:
+            continue
+        is_current = (
+            src.telegram_chat_id == source_telegram_id and
+            tgt.telegram_chat_id == target_telegram_id
+        )
+        button_text = f'{"✓ " if is_current else ""}来自: {src.name} → {tgt.name}'
+        cb_data = f'switch_pm:{src.telegram_chat_id}:{tgt.telegram_chat_id}'
+        buttons.append([Button.inline(button_text, cb_data)])
+
+    try:
+        await message.edit('请选择要管理的转发规则（来源 → 目标）:', buttons=buttons)
+    except Exception as e:
+        if 'message was not modified' not in str(e).lower():
+            raise
+
+    # 查询名称用于 answer 提示
+    source_chat = session.query(Chat).filter(Chat.telegram_chat_id == source_telegram_id).first()
+    target_chat = session.query(Chat).filter(Chat.telegram_chat_id == target_telegram_id).first()
+    source_name = source_chat.name if source_chat else source_telegram_id
+    target_name = target_chat.name if target_chat else target_telegram_id
+    await event.answer(f'已切换到: {source_name} → {target_name}')
+
 async def callback_settings(event, rule_id, session, message, data):
     """处理显示设置的回调"""
     # 获取当前聊天
@@ -644,6 +709,7 @@ async def handle_callback(event):
 CALLBACK_HANDLERS = {
     'toggle_current': callback_toggle_current,
     'switch': callback_switch,
+    'switch_pm': callback_switch_pm,
     'settings': callback_settings,
     'delete': callback_delete,
     'page': callback_page,
