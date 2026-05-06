@@ -91,20 +91,33 @@ async def handle_user_message(event, user_client, bot_client):
         state_chat_id = db_chat_id
         # logger.info(f"handle_user_message:非频道消息处理: sender_id={sender_id}")
 
-        # 仅对非频道消息检查用户状态（避免被监听频道的普通消息误触发 prompt 输入）
-        current_state, message, state_type = state_manager.get_state(sender_id, state_chat_id)
-        # logger.info(f'handle_user_message：当前是否有状态: {state_manager.check_state()}')
-        # logger.info(f"handle_user_message：当前用户ID和聊天ID: {sender_id}, {state_chat_id}")
-        # logger.info(f"handle_user_message：获取当前聊天窗口的用户状态: {current_state}")
+        # [FIX] 仅当消息来自管理员（USER_ID）时才检查 state，防止被监听群组中的
+        # 普通成员消息误触发 prompt 输入，导致消息被吞掉而不走转发流程。
+        # 
+        # 原始逻辑用 event.sender_id 直接查 state，而普通群组成员如果曾在被监听群组里
+        # 发送过 bot 命令（bot 会在 handle_bot_message 里以 (sender_id, group_chat_id) 存 state），
+        # 之后该成员再在群组里发消息就会被误判为 prompt 输入而提前 return，
+        # 导致 replace / deleteend 等规则完全不生效。
+        #
+        # 修复方案：只有 sender_id == USER_ID（管理员）才做 state 检查；
+        # 非管理员发来的消息一律跳过 state 检查，直接走转发流程。
+        user_id_env = os.getenv('USER_ID')
+        is_admin_sender = (user_id_env is not None and str(sender_id) == str(user_id_env))
 
-        if current_state:
-            # logger.info(f"检测到用户状态: {current_state}")
-            # 处理提示词设置
-            # logger.info("准备处理提示词设置")
-            if await handle_prompt_setting(event, bot_client, sender_id, state_chat_id, current_state, message):
-                # logger.info("提示词设置处理完成，返回")
-                return
-            # logger.info("提示词设置处理未完成，继续执行")
+        if is_admin_sender:
+            current_state, message, state_type = state_manager.get_state(sender_id, state_chat_id)
+            # logger.info(f'handle_user_message：当前是否有状态: {state_manager.check_state()}')
+            # logger.info(f"handle_user_message：当前用户ID和聊天ID: {sender_id}, {state_chat_id}")
+            # logger.info(f"handle_user_message：获取当前聊天窗口的用户状态: {current_state}")
+
+            if current_state:
+                # logger.info(f"检测到用户状态: {current_state}")
+                # 处理提示词设置
+                # logger.info("准备处理提示词设置")
+                if await handle_prompt_setting(event, bot_client, sender_id, state_chat_id, current_state, message):
+                    # logger.info("提示词设置处理完成，返回")
+                    return
+                # logger.info("提示词设置处理未完成，继续执行")
 
     # 检查是否是媒体组消息（使用 db_chat_id 保持一致性）
     if event.message.grouped_id:
