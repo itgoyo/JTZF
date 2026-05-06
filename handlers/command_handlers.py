@@ -1,5 +1,6 @@
 from sqlalchemy.exc import IntegrityError
 from telethon import Button
+from telethon.tl import types as tl_types
 from models.models import MediaTypes, MediaExtensions
 from enums.enums import AddMode, ForwardMode
 from models.models import get_session, Keyword, ReplaceRule, DeleteRule, AppendRule, ButtonRule, User, RuleSync
@@ -373,8 +374,10 @@ async def handle_switch_command(event):
     """
     current_chat = await event.get_chat()
     current_chat_id = str(current_chat.id)
-    user_id_str = os.getenv('USER_ID')
-    is_private_chat = (user_id_str is not None and current_chat_id == str(user_id_str))
+    # 使用 Telethon 类型系统判断私聊：私聊里 get_chat() 返回 User 对象，
+    # 群组返回 Chat，频道/超级群组返回 Channel。
+    # 比对 USER_ID 字符串更可靠（避免 ADMINS/USER_ID 配置不一致时误判）。
+    is_private_chat = isinstance(current_chat, tl_types.User)
 
     session = get_session()
     try:

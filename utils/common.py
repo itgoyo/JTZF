@@ -2,7 +2,7 @@ import importlib
 import os
 import sys
 import logging
-from telethon.tl.types import ChannelParticipantsAdmins
+from telethon.tl.types import ChannelParticipantsAdmins, User as TlUser
 from ai import get_ai_provider
 from enums.enums import ForwardMode
 from models.models import Chat, ForwardRule
@@ -68,9 +68,11 @@ async def get_current_rule(session, event):
         current_chat = await event.get_chat()
         logger.info(f'获取当前聊天: {current_chat.id}')
 
-        # 判断是否在与 bot 的私聊中（chat_id == USER_ID）
-        user_id_str = os.getenv('USER_ID')
-        is_private_chat = (user_id_str is not None and str(current_chat.id) == str(user_id_str))
+        # 判断是否在与 bot 的私聊中
+        # 使用 Telethon 类型系统判断：私聊里 get_chat() 返回 User 对象；
+        # 群组返回 Chat，频道/超级群组返回 Channel。比对 USER_ID 字符串更可靠，
+        # 避免因 ADMINS 配置方式不同或 ID 格式差异导致误判。
+        is_private_chat = isinstance(current_chat, TlUser)
 
         current_chat_db = session.query(Chat).filter(
             Chat.telegram_chat_id == str(current_chat.id)
