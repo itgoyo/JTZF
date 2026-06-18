@@ -92,6 +92,7 @@ class ForwardRule(Base):
     enable_ai_rewrite = Column(Boolean, default=False)     # 是否启用AI改写
     ai_rewrite_model = Column(String, nullable=True)       # AI改写使用的模型
     ai_rewrite_prompt = Column(String, nullable=True)      # AI改写的提示词
+    enable_ai_translate = Column(Boolean, default=False)   # 是否启用AI自动翻译为中文
 
     # 智能广告相关字段
     enable_smart_ad = Column(Boolean, default=False)       # 是否启用智能广告
@@ -468,6 +469,7 @@ def migrate_db(engine):
         'enable_ai_rewrite': 'ALTER TABLE forward_rules ADD COLUMN enable_ai_rewrite BOOLEAN DEFAULT FALSE',
         'ai_rewrite_model': 'ALTER TABLE forward_rules ADD COLUMN ai_rewrite_model VARCHAR DEFAULT NULL',
         'ai_rewrite_prompt': 'ALTER TABLE forward_rules ADD COLUMN ai_rewrite_prompt VARCHAR DEFAULT NULL',
+        'enable_ai_translate': 'ALTER TABLE forward_rules ADD COLUMN enable_ai_translate BOOLEAN DEFAULT FALSE',
         'expire_at': 'ALTER TABLE forward_rules ADD COLUMN expire_at DATETIME DEFAULT NULL',
         # 智能广告字段
         'enable_smart_ad': 'ALTER TABLE forward_rules ADD COLUMN enable_smart_ad BOOLEAN DEFAULT FALSE',

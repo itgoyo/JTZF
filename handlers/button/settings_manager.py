@@ -470,8 +470,17 @@ PUSH_SETTINGS = {
     }
 }
 
-# AI 增强设置（去广告 + 改写）
+# AI 增强设置（翻译 + 去广告 + 改写）
 AI_ENHANCE_SETTINGS = {
+    'enable_ai_translate': {
+        'display_name': '自动翻译为中文',
+        'values': {
+            True: '开启',
+            False: '关闭'
+        },
+        'toggle_action': 'toggle_ai_translate',
+        'toggle_func': lambda current: not current
+    },
     'enable_ai_ad_removal': {
         'display_name': 'AI去广告',
         'values': {

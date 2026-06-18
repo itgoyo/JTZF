@@ -228,6 +228,7 @@ async def run_ai_startup_health_check():
                 getattr(rule, 'enable_ai_rewrite', False),
                 getattr(rule, 'enable_ai_ad_removal', False),
                 getattr(rule, 'enable_ai_tag', False),
+                getattr(rule, 'enable_ai_translate', False),
             ]):
                 models_to_check.add(fixed_model)
 
@@ -403,6 +404,14 @@ async def register_bot_commands(bot):
         BotCommand(
             command='buttons_off',
             description='关闭当前规则的按钮广告'
+        ),
+        BotCommand(
+            command='ai_translate_on',
+            description='开启自动翻译（非中文转中文）'
+        ),
+        BotCommand(
+            command='ai_translate_off',
+            description='关闭自动翻译'
         ),
         # 导入导出功能
         BotCommand(

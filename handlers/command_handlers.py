@@ -867,6 +867,50 @@ async def handle_buttons_off_command(event):
     finally:
         session.close()
 
+
+async def handle_ai_translate_on_command(event):
+    """开启 AI 自动翻译为中文"""
+    session = get_session()
+    try:
+        rule_info = await get_current_rule(session, event)
+        if not rule_info:
+            return
+        rule, source_chat = rule_info
+
+        rule.enable_ai_translate = True
+        session.commit()
+
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, f'✅ 已开启自动翻译（非中文转中文）\n规则: 来自 {source_chat.name}')
+    except Exception as e:
+        session.rollback()
+        logger.error(f'开启自动翻译时出错: {e}')
+        await reply_and_delete(event, '开启自动翻译时出错，请检查日志')
+    finally:
+        session.close()
+
+
+async def handle_ai_translate_off_command(event):
+    """关闭 AI 自动翻译为中文"""
+    session = get_session()
+    try:
+        rule_info = await get_current_rule(session, event)
+        if not rule_info:
+            return
+        rule, source_chat = rule_info
+
+        rule.enable_ai_translate = False
+        session.commit()
+
+        await async_delete_user_message(event.client, event.message.chat_id, event.message.id, 0)
+        await reply_and_delete(event, f'✅ 已关闭自动翻译\n规则: 来自 {source_chat.name}')
+    except Exception as e:
+        session.rollback()
+        logger.error(f'关闭自动翻译时出错: {e}')
+        await reply_and_delete(event, '关闭自动翻译时出错，请检查日志')
+    finally:
+        session.close()
+
 async def handle_list_keyword_command(event):
     """处理 list_keyword 命令"""
     session = get_session()
@@ -1261,6 +1305,10 @@ async def handle_help_command(event, command):
         "/append_off(/apo) - 关闭追加文本\n"
         "/buttons(/bt) <文本 - 链接>[&&文本 - 链接] - 在转发末尾追加按钮（支持多行）\n"
         "/buttons_off(/bto) - 关闭按钮广告\n\n"
+
+        "**AI增强开关**\n"
+        "/ai_translate_on(/ato) - 开启自动翻译（非中文→中文）\n"
+        "/ai_translate_off(/atf) - 关闭自动翻译\n\n"
 
         "**导入导出**\n"
         "/export_keyword(/ek) - 导出当前规则的关键字\n"

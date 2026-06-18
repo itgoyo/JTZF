@@ -36,6 +36,11 @@ class ReplyFilter(BaseFilter):
                 logger.info("没有评论区链接或已转发消息，无法添加评论区按钮回复")
                 return True
                 
+            # 开启 /buttons 强覆盖时，不再追加评论区按钮回复
+            if getattr(context, 'strict_custom_buttons', False):
+                logger.info("/buttons 强覆盖模式开启，跳过媒体组评论区按钮回复")
+                return True
+
             # 使用bot客户端（context.client）
             client = context.client
             

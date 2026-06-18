@@ -289,6 +289,9 @@ async def get_ai_enhance_settings_text(rule):
 
     return (
         f"✨ AI增强设置\n\n"
+        f"**自动翻译**\n"
+        f"状态：{'开启' if getattr(rule, 'enable_ai_translate', False) else '关闭'}\n"
+        f"说明：开启后，非中文内容会先翻译为中文（失败重试1次，仍失败发原文）\n\n"
         f"**AI去广告**\n"
         f"状态：{'开启' if rule.enable_ai_ad_removal else '关闭'}\n"
         f"模型：`{fixed_model}`\n"
