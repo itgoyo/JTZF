@@ -29,7 +29,7 @@ class AIRewriteFilter(BaseFilter):
             return True
 
         try:
-            model = getattr(rule, 'ai_rewrite_model', None) or os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
+            model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
             prompt = getattr(rule, 'ai_rewrite_prompt', None) or DEFAULT_AI_REWRITE_PROMPT
 
             provider = await get_ai_provider(model)
@@ -41,7 +41,9 @@ class AIRewriteFilter(BaseFilter):
                 prompt=prompt
             )
 
-            if rewritten and rewritten.strip():
+            if self._is_ai_failure_text(rewritten):
+                logger.warning(f"[AIRewrite] AI改写失败，保留原文: {rewritten}")
+            elif rewritten and rewritten.strip():
                 logger.info(f"[AIRewrite] 改写完成，新文本长度: {len(rewritten)}")
                 logger.info(f"[AIRewrite] 改写结果（前200字）: {rewritten[:200]}")
                 context.message_text = rewritten.strip()
@@ -52,3 +54,19 @@ class AIRewriteFilter(BaseFilter):
             logger.warning(f"[AIRewrite] 处理出错，放行原文: {e}", exc_info=True)
 
         return True
+
+    @staticmethod
+    def _is_ai_failure_text(text):
+        """识别提供商返回的错误文本，避免把错误信息当正文发送。"""
+        if not text:
+            return False
+
+        normalized = str(text).strip().lower()
+        failure_markers = (
+            'ai处理失败',
+            'error code:',
+            'forbidden',
+            '初始化',
+            'api 调用失败',
+        )
+        return any(marker in normalized for marker in failure_markers)

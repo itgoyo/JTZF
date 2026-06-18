@@ -33,8 +33,7 @@ async def create_ai_settings_buttons(rule=None,rule_id=None):
             continue
 
         elif field == 'ai_model':
-            current_value = getattr(rule, field)
-            display_value = current_value or os.getenv('DEFAULT_AI_MODEL')
+            display_value = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
         else:
             current_value = getattr(rule, field)
             display_value = config['values'].get(current_value, str(current_value))
@@ -56,8 +55,7 @@ async def create_ai_tag_settings_buttons(rule=None, rule_id=None):
 
     for field, config in AI_TAG_SETTINGS.items():
         if field == 'ai_tag_model':
-            current_value = getattr(rule, field)
-            display_value = current_value or os.getenv('DEFAULT_AI_MODEL', 'default')
+            display_value = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
             button_text = f"{config['display_name']}: {display_value}"
         elif field == 'ai_tag_max_count':
             current_value = getattr(rule, field) or 3
@@ -95,8 +93,7 @@ async def create_ai_enhance_settings_buttons(rule=None, rule_id=None):
         if field in ('ai_ad_removal_prompt', 'ai_rewrite_prompt'):
             button_text = config['display_name']
         elif field in ('ai_ad_removal_model', 'ai_rewrite_model'):
-            current_value = getattr(rule, field, None)
-            display_value = current_value or os.getenv('DEFAULT_AI_MODEL', '默认')
+            display_value = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
             button_text = f"{config['display_name']}: {display_value}"
         elif field == 'ai_ad_removal_threshold':
             current_value = getattr(rule, field, 80)

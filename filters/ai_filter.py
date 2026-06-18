@@ -185,14 +185,11 @@ async def _ai_handle(message: str, rule, image_files=None) -> str:
         if not rule.is_ai:
             logger.info("AI处理未开启，返回原始消息")
             return message
-        # 先读取数据库，如果ai模型为空，则使用.env中的默认模型
-        if not rule.ai_model:
-            rule.ai_model = DEFAULT_AI_MODEL
-            logger.info(f"使用默认AI模型: {rule.ai_model}")
-        else:
-            logger.info(f"使用规则配置的AI模型: {rule.ai_model}")
-            
-        provider = await get_ai_provider(rule.ai_model)
+        # AI 模型统一读取 .env 的 DEFAULT_AI_MODEL，不支持规则级动态切换
+        model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
+        logger.info(f"使用固定AI模型: {model}")
+
+        provider = await get_ai_provider(model)
         
         if not rule.ai_prompt:
             rule.ai_prompt = DEFAULT_AI_PROMPT
@@ -289,7 +286,7 @@ async def _ai_handle(message: str, rule, image_files=None) -> str:
         processed_text = await provider.process_message(
             message=message,
             prompt=prompt,
-            model=rule.ai_model,
+            model=model,
             images=img_data if img_data else None
         )
         logger.info(f"AI处理完成: {processed_text}")

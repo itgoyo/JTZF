@@ -11,11 +11,14 @@ from handlers.button.callback.push_callback import *
 from handlers.button.callback.smart_ad_callback import *
 import logging
 import aiohttp
+import os
+from telethon.tl import types
 from utils.constants import RSS_HOST, RSS_PORT
 from utils.auto_delete import respond_and_delete,reply_and_delete
 from utils.common import check_and_clean_chats
 from handlers.button.button_helpers import create_sync_rule_buttons,create_other_settings_buttons, create_ai_enhance_settings_buttons
 
+from managers.state_manager import state_manager
 logger = logging.getLogger(__name__)
 
 
@@ -463,7 +466,15 @@ async def callback_sync_rule_page(event, rule_id_data, session, message, data):
 async def callback_close_settings(event, rule_id, session, message, data):
     """处理关闭设置按钮的回调，删除当前消息"""
     try:
-        logger.info("执行关闭设置操作，准备删除消息")
+        logger.info("执行关闭设置操作，准备清理状态并删除消息")
+        # 清理待确认状态
+        chat = getattr(event, 'chat', None)
+        if isinstance(chat, types.Channel):
+            user_id = os.getenv('USER_ID')
+        else:
+            user_id = event.sender_id
+        chat_id = abs(event.chat_id)
+        state_manager.clear_state(user_id, chat_id)
         await message.delete()
     except Exception as e:
         logger.error(f"删除消息时出错: {str(e)}")
@@ -797,6 +808,8 @@ CALLBACK_HANDLERS = {
     'select_ai_rewrite_model': callback_select_ai_rewrite_model,
     'set_ai_rewrite_prompt': callback_set_ai_rewrite_prompt,
     'cancel_set_ai_enhance': callback_cancel_set_ai_enhance,
+    'confirm_set_ai_rewrite_prompt': callback_confirm_set_ai_rewrite_prompt,
+    'cancel_confirm_ai_rewrite_prompt': callback_cancel_confirm_ai_rewrite_prompt,
     # 智能广告设置
     'smart_ad_settings': callback_smart_ad_settings,
     'toggle_smart_ad': callback_toggle_smart_ad,

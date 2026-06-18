@@ -1,7 +1,7 @@
 from telethon import TelegramClient, types
 from telethon.tl.types import BotCommand
 from telethon.tl.functions.bots import SetBotCommandsRequest
-from models.models import init_db
+from models.models import init_db, get_session, ForwardRule
 from dotenv import load_dotenv
 from message_listener import setup_listeners
 import os
@@ -16,6 +16,8 @@ from scheduler.expiry_scheduler import ExpiryScheduler
 from handlers.bot_handler import send_welcome_message
 from rss.main import app as rss_app
 from utils.log_config import setup_logging
+from utils.constants import DEFAULT_AI_MODEL
+from ai import get_ai_provider
 
 # 设置Docker日志的默认配置，如果docker-compose.yml中没有配置日志选项将使用这些值
 os.environ.setdefault('DOCKER_LOG_MAX_SIZE', '10m')
@@ -123,6 +125,9 @@ async def start_clients():
         except Exception as e:
             logger.warning(f'预热 entity 缓存时出错（不影响正常启动）: {e}')
 
+        # 启动后执行 AI 连通性体检（仅告警，不中断主流程）
+        await run_ai_startup_health_check()
+
         # 设置消息监听器
         await setup_listeners(user_client, bot_client)
 
@@ -191,6 +196,86 @@ async def start_clients():
         if 'rss_process' in locals() and rss_process.is_alive():
             rss_process.terminate()
             rss_process.join()
+
+
+def _is_ai_failure_text(text):
+    if not text:
+        return True
+
+    normalized = str(text).strip().lower()
+    failure_markers = (
+        'ai处理失败',
+        'error code:',
+        'forbidden',
+        '初始化',
+        'api 调用失败',
+    )
+    return any(marker in normalized for marker in failure_markers)
+
+
+async def run_ai_startup_health_check():
+    """启动时检测当前启用规则依赖的 AI 模型连通性。失败仅告警，不中断启动。"""
+    session = get_session()
+    models_to_check = set()
+
+    try:
+        rules = session.query(ForwardRule).filter(ForwardRule.enable_rule == True).all()
+
+        fixed_model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL).strip()
+        for rule in rules:
+            if any([
+                getattr(rule, 'is_ai', False),
+                getattr(rule, 'enable_ai_rewrite', False),
+                getattr(rule, 'enable_ai_ad_removal', False),
+                getattr(rule, 'enable_ai_tag', False),
+            ]):
+                models_to_check.add(fixed_model)
+
+        models_to_check = {m for m in models_to_check if m}
+
+        if not models_to_check:
+            logger.info('[AI Health] 未检测到启用 AI 的规则，跳过连通性体检')
+            return
+
+        logger.info(f"[AI Health] 开始连通性体检，待检测模型: {', '.join(sorted(models_to_check))}")
+
+        ok_models = []
+        failed_models = []
+
+        for model in sorted(models_to_check):
+            try:
+                provider = await get_ai_provider(model)
+                result = await asyncio.wait_for(
+                    provider.process_message(
+                        message='连通性检测',
+                        prompt='请只返回OK，不要输出其他内容。',
+                    ),
+                    timeout=25,
+                )
+
+                if _is_ai_failure_text(result):
+                    failed_models.append((model, str(result).strip()))
+                    logger.warning(f"[AI Health] 模型不可用: {model}, 返回: {result}")
+                else:
+                    ok_models.append(model)
+                    logger.info(f"[AI Health] 模型可用: {model}")
+
+            except Exception as e:
+                failed_models.append((model, str(e)))
+                logger.warning(f"[AI Health] 模型检测异常: {model}, 错误: {e}", exc_info=True)
+
+        logger.info(
+            f"[AI Health] 体检完成，可用 {len(ok_models)} 个，不可用 {len(failed_models)} 个"
+        )
+
+        if failed_models:
+            for model, reason in failed_models:
+                logger.warning(f"[AI Health] 不可用模型告警 -> {model}: {reason}")
+
+    except Exception as e:
+        logger.warning(f"[AI Health] 连通性体检执行失败（已忽略，不影响启动）: {e}", exc_info=True)
+    finally:
+        session.close()
 
 
 async def register_bot_commands(bot):

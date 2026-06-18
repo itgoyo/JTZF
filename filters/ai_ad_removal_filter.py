@@ -30,7 +30,7 @@ class AIAdRemovalFilter(BaseFilter):
             return True
 
         try:
-            model = getattr(rule, 'ai_ad_removal_model', None) or os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
+            model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
             prompt = getattr(rule, 'ai_ad_removal_prompt', None) or DEFAULT_AI_AD_REMOVAL_PROMPT
             threshold = getattr(rule, 'ai_ad_removal_threshold', None)
             if threshold is None:

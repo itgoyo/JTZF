@@ -9,8 +9,21 @@ from utils.common import get_main_module
 import traceback
 from utils.auto_delete import send_message_and_delete
 from models.models import PushConfig
+from telethon import Button
 
 logger = logging.getLogger(__name__)
+
+
+def prepare_ai_rewrite_prompt_confirmation(rule_id: int, new_prompt: str):
+    """准备AI改写提示词确认所需的payload和下一个状态"""
+    payload = {
+        "rule_id": int(rule_id),
+        "field_name": "ai_rewrite_prompt",
+        "new_prompt": new_prompt,
+        "template_type": "ai_enhance",
+    }
+    return payload, f"confirm_ai_rewrite_prompt:{int(rule_id)}"
+
 
 async def handle_prompt_setting(event, client, sender_id, chat_id, current_state, message):
     """处理设置提示词的逻辑"""
@@ -74,10 +87,39 @@ async def handle_prompt_setting(event, client, sender_id, chat_id, current_state
         logger.info(f"检测到设置AI去广告提示词,规则ID:{rule_id}")
     elif current_state.startswith("set_ai_rewrite_prompt:"):
         rule_id = current_state.split(":")[1]
-        field_name = "ai_rewrite_prompt"
-        prompt_type = "AI改写"
-        template_type = "ai_enhance"
+        new_prompt = event.message.text
         logger.info(f"检测到设置AI改写提示词,规则ID:{rule_id}")
+        
+        # 使用新的两阶段确认流程
+        pending_payload, confirm_state = prepare_ai_rewrite_prompt_confirmation(
+            int(rule_id),
+            new_prompt,
+        )
+        state_manager.set_pending_data(sender_id, chat_id, pending_payload)
+        state_manager.set_state(
+            sender_id,
+            chat_id,
+            confirm_state,
+            message,
+            state_type="ai_enhance",
+        )
+
+        confirm_text = (
+            "已接收新的AI改写提示词，请确认是否保存:\n\n"
+            f"{new_prompt}"
+        )
+        confirm_buttons = [[
+            Button.inline("确定", f"confirm_set_ai_rewrite_prompt:{rule_id}"),
+            Button.inline("取消", f"cancel_confirm_ai_rewrite_prompt:{rule_id}"),
+        ]]
+
+        # 优先编辑原设置消息，避免部分聊天场景 send_message 权限限制导致按钮不显示。
+        try:
+            await message.edit(confirm_text, buttons=confirm_buttons)
+        except Exception as edit_err:
+            logger.warning(f"编辑确认消息失败，降级为发送新消息: {edit_err}")
+            await client.send_message(chat_id, confirm_text, buttons=confirm_buttons)
+        return True
     elif current_state.startswith("set_ai_ad_removal_threshold:"):
         rule_id = current_state.split(":")[1]
         return await handle_ai_ad_removal_threshold_input(event, client, sender_id, chat_id, rule_id, message)

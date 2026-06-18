@@ -114,7 +114,7 @@ class SmartAdAnalyzer:
     ) -> List[dict]:
         """AI语义分析，失败时返回空列表（自动降级）"""
         try:
-            model = getattr(rule, 'smart_ad_model', None) or os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
+            model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
 
             # 构建广告摘要给AI（只传id、name、ai_description，节省token）
             ads_summary = [
@@ -187,7 +187,7 @@ class SmartAdAnalyzer:
     ) -> Optional[str]:
         """为命中广告生成自然衔接的推荐文案，失败时返回None（使用默认文案）"""
         try:
-            model = getattr(rule, 'smart_ad_model', None) or os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
+            model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
 
             prompt = SMART_AD_COPYWRITE_PROMPT.format(
                 message_text=text[:500],

@@ -216,19 +216,16 @@ class SummaryScheduler:
 
                 all_messages = '\n'.join(messages)
 
-                # 检查AI模型设置，如未设置则使用默认模型
-                if not rule.ai_model:
-                    rule.ai_model = DEFAULT_AI_MODEL
-                    logger.info(f"使用默认AI模型进行总结: {rule.ai_model}")
-                else:
-                    logger.info(f"使用规则配置的AI模型进行总结: {rule.ai_model}")
+                # AI 模型统一读取 .env 的 DEFAULT_AI_MODEL，不支持规则级动态切换
+                model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
+                logger.info(f"使用固定AI模型进行总结: {model}")
 
                 # 获取AI提供者并处理总结
-                provider = await get_ai_provider(rule.ai_model)
+                provider = await get_ai_provider(model)
                 summary = await provider.process_message(
                     all_messages,
                     prompt=rule.summary_prompt or DEFAULT_SUMMARY_PROMPT,
-                    model=rule.ai_model
+                    model=model
                 )
 
 

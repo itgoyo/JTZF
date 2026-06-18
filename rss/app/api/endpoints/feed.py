@@ -22,7 +22,7 @@ import os
 import subprocess
 import platform
 from pydantic import ValidationError
-from utils.constants import RSS_MEDIA_BASE_URL
+from utils.constants import RSS_MEDIA_BASE_URL, DEFAULT_AI_MODEL
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -373,12 +373,12 @@ async def add_entry(rule_id: int, entry_data: Dict[str, Any] = Body(...)):
         # 使用AI提取内容
         if rss_config.is_ai_extract:
             try:
-                rule = session.query(ForwardRule).filter(ForwardRule.id == rule_id).first()
-                provider = await get_ai_provider(rule.ai_model)
+                model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
+                provider = await get_ai_provider(model)
                 json_text = await provider.process_message(
                     message=entry.content or "",
                     prompt=rss_config.ai_extract_prompt,
-                    model=rule.ai_model
+                    model=model
                 )
                 logger.info(f"AI提取内容: {json_text}")
                 

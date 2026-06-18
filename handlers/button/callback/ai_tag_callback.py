@@ -9,6 +9,7 @@ from handlers.button.button_helpers import create_ai_tag_settings_buttons, creat
 from models.models import ForwardRule
 from managers.state_manager import state_manager
 from utils.common import is_admin
+from utils.constants import DEFAULT_AI_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ async def cancel_state_after_timeout(user_id: int, chat_id: int, timeout_minutes
 
 
 def _get_ai_tag_text(rule: ForwardRule) -> str:
-    model = rule.ai_tag_model or os.getenv('DEFAULT_AI_MODEL', '默认')
+    model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
     enabled = '✅ 开启' if rule.enable_ai_tag else '❌ 关闭'
     return (
         f'🏷️ AI自动打标签设置\n\n'
@@ -67,31 +68,25 @@ async def callback_toggle_ai_tag(event, rule_id, session, message, data):
 # ─────────────────────────── model selection ────────────────────────────
 
 async def callback_change_ai_tag_model(event, rule_id, session, message, data):
-    """打开模型选择页面（复用现有 create_model_buttons，使用 ai_tag 专属 prefix）"""
+    """AI模型固定为 .env 的 DEFAULT_AI_MODEL，不支持动态切换。"""
     try:
-        buttons = await create_model_buttons(rule_id, page=0, prefix='select_ai_tag_model')
-        await event.edit('请选择AI标签使用的模型：', buttons=buttons)
+        rule = session.query(ForwardRule).get(int(rule_id))
+        if rule:
+            await event.answer('AI模型已固定，请在 .env 中修改 DEFAULT_AI_MODEL')
+            await event.edit(_get_ai_tag_text(rule), buttons=await create_ai_tag_settings_buttons(rule))
     finally:
         session.close()
 
 
 async def callback_select_ai_tag_model(event, rule_id, session, message, data):
-    """确认选择的模型"""
-    # data 格式: select_ai_tag_model:<rule_id>:<model_name>
-    parts = data.split(':', 2)
-    if len(parts) != 3:
-        await event.answer('参数错误')
-        session.close()
-        return
-    _, rid, model = parts
+    """AI模型固定为 .env 的 DEFAULT_AI_MODEL，不支持动态切换。"""
     try:
-        rule = session.query(ForwardRule).get(int(rid))
+        rid = int(str(rule_id).split(':', 1)[0])
+        rule = session.query(ForwardRule).get(rid)
         if not rule:
             await event.answer('规则不存在')
             return
-        rule.ai_tag_model = model
-        session.commit()
-        await event.answer(f'AI标签模型已设置为: {model}')
+        await event.answer('AI模型已固定，请在 .env 中修改 DEFAULT_AI_MODEL')
         await event.edit(_get_ai_tag_text(rule), buttons=await create_ai_tag_settings_buttons(rule))
     finally:
         session.close()

@@ -9,6 +9,7 @@ from telethon import Button
 from handlers.button.button_helpers import create_model_buttons
 from models.models import ForwardRule, get_session
 from utils.smart_ad_utils import smart_ad_config
+from utils.constants import DEFAULT_AI_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ async def get_smart_ad_settings_text(rule) -> str:
     threshold = getattr(rule, 'smart_ad_threshold', 0.7) or 0.7
     max_count = getattr(rule, 'smart_ad_max_count', 3) or 3
     cooldown = getattr(rule, 'smart_ad_cooldown', 30) or 30
-    model = getattr(rule, 'smart_ad_model', None) or os.getenv('DEFAULT_AI_MODEL', '默认')
+    model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
     ad_count = smart_ad_config.count()
 
     threshold_label = _threshold_label(threshold)
@@ -64,7 +65,7 @@ async def create_smart_ad_settings_buttons(rule=None, rule_id=None):
     threshold = getattr(rule, 'smart_ad_threshold', 0.7) or 0.7
     max_count = getattr(rule, 'smart_ad_max_count', 3) or 3
     cooldown = getattr(rule, 'smart_ad_cooldown', 30) or 30
-    model = getattr(rule, 'smart_ad_model', None) or os.getenv('DEFAULT_AI_MODEL', '默认')
+    model = os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)
 
     buttons = [
         # 总开关
@@ -238,33 +239,30 @@ async def callback_smart_ad_cooldown(event, rule_id, session, message, data):
 
 
 async def callback_change_smart_ad_model(event, rule_id, session, message, data):
-    """进入模型选择页面"""
+    """AI模型固定为 .env 的 DEFAULT_AI_MODEL，不支持动态切换。"""
     try:
-        await event.edit(
-            "请选择智能广告使用的AI模型：",
-            buttons=await create_model_buttons(rule_id, page=0, prefix='select_smart_ad_model')
-        )
+        rule = session.query(ForwardRule).get(int(rule_id))
+        if rule:
+            await event.answer(f"AI模型已固定为 {os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)}，请在 .env 中修改")
+            await event.edit(
+                await get_smart_ad_settings_text(rule),
+                buttons=await create_smart_ad_settings_buttons(rule)
+            )
     finally:
         session.close()
 
 
 async def callback_select_smart_ad_model(event, rule_id, session, message, data):
-    """选择AI模型，格式: select_smart_ad_model:{rule_id}:{model}"""
-    parts = data.split(':', 2)
-    if len(parts) < 3:
-        await event.answer("参数错误")
-        return
-    _, rid, model = parts
+    """AI模型固定为 .env 的 DEFAULT_AI_MODEL，不支持动态切换。"""
     try:
-        rule = session.query(ForwardRule).get(int(rid))
+        rid = int(str(rule_id).split(':', 1)[0])
+        rule = session.query(ForwardRule).get(rid)
         if rule:
-            rule.smart_ad_model = model
-            session.commit()
+            await event.answer(f"AI模型已固定为 {os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)}，请在 .env 中修改")
             await event.edit(
                 await get_smart_ad_settings_text(rule),
                 buttons=await create_smart_ad_settings_buttons(rule)
             )
-            await event.answer(f"已选择模型: {model}")
     except Exception as e:
         logger.error(f"[SmartAd] 选择模型出错: {e}")
         await event.answer("设置失败")

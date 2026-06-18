@@ -11,9 +11,18 @@ import logging
 from utils.common import get_main_module, get_ai_settings_text, get_ai_enhance_settings_text
 from utils.common import is_admin
 from scheduler.summary_scheduler import SummaryScheduler
+from utils.constants import DEFAULT_AI_MODEL
 
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_state_user_id(event):
+    """统一状态管理中的 user_id 取值，兼容频道场景。"""
+    chat = getattr(event, 'chat', None)
+    if isinstance(chat, types.Channel):
+        return os.getenv('USER_ID')
+    return event.sender_id
 
 
 async def callback_ai_settings(event, rule_id, session, message, data):
@@ -228,56 +237,12 @@ async def callback_select_time(event, rule_id, session, message, data):
 
 
 async def callback_select_model(event, rule_id, session, message, data):
-    # 分割数据，最多分割2次，将第三部分直接作为完整的模型名称
-    parts = data.split(':', 2)
-    _, rule_id_part, model = parts
-    
+    # AI 模型固定为 .env 的 DEFAULT_AI_MODEL，不支持动态切换
     try:
-        rule = session.query(ForwardRule).get(int(rule_id_part))
+        rid = int(str(rule_id).split(':', 1)[0])
+        rule = session.query(ForwardRule).get(rid)
         if rule:
-            # 记录旧模型
-            old_model = rule.ai_model
-            
-            # 更新模型
-            rule.ai_model = model
-            session.commit()
-            logger.info(f"已更新规则 {rule_id_part} 的AI模型为: {model}")
-            
-            # 检查是否启用了同步功能
-            if rule.enable_sync:
-                logger.info(f"规则 {rule.id} 启用了同步功能，正在同步AI模型设置到关联规则")
-                # 获取需要同步的规则列表
-                sync_rules = session.query(RuleSync).filter(RuleSync.rule_id == rule.id).all()
-                
-                # 为每个同步规则应用相同的AI模型设置
-                for sync_rule in sync_rules:
-                    sync_rule_id = sync_rule.sync_rule_id
-                    logger.info(f"正在同步AI模型到规则 {sync_rule_id}")
-                    
-                    # 获取同步目标规则
-                    target_rule = session.query(ForwardRule).get(sync_rule_id)
-                    if not target_rule:
-                        logger.warning(f"同步目标规则 {sync_rule_id} 不存在，跳过")
-                        continue
-                    
-                    # 更新同步目标规则的AI模型设置
-                    try:
-                        # 记录旧模型
-                        old_target_model = target_rule.ai_model
-                        
-                        # 设置新模型
-                        target_rule.ai_model = model
-                        
-                        logger.info(f"同步规则 {sync_rule_id} 的AI模型从 {old_target_model} 到 {model}")
-                    except Exception as e:
-                        logger.error(f"同步AI模型到规则 {sync_rule_id} 时出错: {str(e)}")
-                        continue
-                
-                # 提交所有同步更改
-                session.commit()
-                logger.info("所有同步AI模型更改已提交")
-
-            # 返回到 AI 设置页面
+            await event.answer(f"AI模型已固定为 {os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)}，请在 .env 中修改")
             await event.edit(await get_ai_settings_text(rule), buttons=await create_ai_settings_buttons(rule))
     finally:
         session.close()
@@ -286,22 +251,19 @@ async def callback_select_model(event, rule_id, session, message, data):
 
 
 async def callback_model_page(event, rule_id, session, message, data):
-    # 处理翻页，格式: model_page:{rule_id}:{page}:{prefix}（prefix可选，默认select_model）
-    parts = data.split(':')
-    _, rid, page_str = parts[0], parts[1], parts[2]
-    prefix = parts[3] if len(parts) > 3 else 'select_model'
-    page = int(page_str)
-
-    if prefix == 'select_ai_tag_model':
-        await event.edit("请选择AI标签使用的模型：", buttons=await create_model_buttons(rid, page=page, prefix=prefix))
-    else:
-        await event.edit("请选择AI模型：", buttons=await create_model_buttons(rid, page=page, prefix=prefix))
+    await event.answer('AI模型已固定，请在 .env 中修改 DEFAULT_AI_MODEL')
     return
 
 
 
 async def callback_change_model(event, rule_id, session, message, data):
-    await event.edit("请选择AI模型：", buttons=await create_model_buttons(rule_id, page=0))
+    try:
+        rule = session.query(ForwardRule).get(int(rule_id))
+        if rule:
+            await event.answer(f"AI模型已固定为 {os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)}，请在 .env 中修改")
+            await event.edit(await get_ai_settings_text(rule), buttons=await create_ai_settings_buttons(rule))
+    finally:
+        session.close()
     return
 
 
@@ -403,19 +365,23 @@ async def callback_ai_enhance_settings(event, rule_id, session, message, data):
 # ── 去广告：模型选择 ──
 
 async def callback_change_ai_ad_removal_model(event, rule_id, session, message, data):
-    await event.edit("请选择AI去广告使用的模型：",
-                     buttons=await create_model_buttons(rule_id, page=0, prefix='select_ai_ad_removal_model'))
+    try:
+        rule = session.query(ForwardRule).get(int(rule_id))
+        if rule:
+            await event.answer(f"AI模型已固定为 {os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)}，请在 .env 中修改")
+            await event.edit(await get_ai_enhance_settings_text(rule),
+                             buttons=await create_ai_enhance_settings_buttons(rule))
+    finally:
+        session.close()
     return
 
 
 async def callback_select_ai_ad_removal_model(event, rule_id, session, message, data):
-    parts = data.split(':', 2)
-    _, rid, model = parts
     try:
-        rule = session.query(ForwardRule).get(int(rid))
+        rid = int(str(rule_id).split(':', 1)[0])
+        rule = session.query(ForwardRule).get(rid)
         if rule:
-            rule.ai_ad_removal_model = model
-            session.commit()
+            await event.answer(f"AI模型已固定为 {os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)}，请在 .env 中修改")
             await event.edit(await get_ai_enhance_settings_text(rule),
                              buttons=await create_ai_enhance_settings_buttons(rule))
     finally:
@@ -499,19 +465,23 @@ async def callback_set_ai_ad_removal_prompt(event, rule_id, session, message, da
 # ── 改写：模型选择 ──
 
 async def callback_change_ai_rewrite_model(event, rule_id, session, message, data):
-    await event.edit("请选择AI改写使用的模型：",
-                     buttons=await create_model_buttons(rule_id, page=0, prefix='select_ai_rewrite_model'))
+    try:
+        rule = session.query(ForwardRule).get(int(rule_id))
+        if rule:
+            await event.answer(f"AI模型已固定为 {os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)}，请在 .env 中修改")
+            await event.edit(await get_ai_enhance_settings_text(rule),
+                             buttons=await create_ai_enhance_settings_buttons(rule))
+    finally:
+        session.close()
     return
 
 
 async def callback_select_ai_rewrite_model(event, rule_id, session, message, data):
-    parts = data.split(':', 2)
-    _, rid, model = parts
     try:
-        rule = session.query(ForwardRule).get(int(rid))
+        rid = int(str(rule_id).split(':', 1)[0])
+        rule = session.query(ForwardRule).get(rid)
         if rule:
-            rule.ai_rewrite_model = model
-            session.commit()
+            await event.answer(f"AI模型已固定为 {os.getenv('DEFAULT_AI_MODEL', DEFAULT_AI_MODEL)}，请在 .env 中修改")
             await event.edit(await get_ai_enhance_settings_text(rule),
                              buttons=await create_ai_enhance_settings_buttons(rule))
     finally:
@@ -564,10 +534,81 @@ async def callback_cancel_set_ai_enhance(event, rule_id, session, message, data)
     try:
         rule = session.query(ForwardRule).get(int(rule_id))
         if rule:
-            state_manager.clear_state(event.sender_id, abs(event.chat_id))
+            user_id = _resolve_state_user_id(event)
+            state_manager.clear_state(user_id, abs(event.chat_id))
             await event.edit(await get_ai_enhance_settings_text(rule),
                              buttons=await create_ai_enhance_settings_buttons(rule))
             await event.answer("已取消设置")
     finally:
         session.close()
 
+
+
+# ── 确认/取消 AI 改写提示词 ──
+
+async def callback_confirm_set_ai_rewrite_prompt(event, rule_id, session, message, data):
+    """确认保存AI改写提示词"""
+    try:
+        rid = int(rule_id)
+        user_id = _resolve_state_user_id(event)
+        chat_id = abs(event.chat_id)
+        
+        # 获取待确认数据
+        pending = state_manager.get_pending_data(user_id, chat_id)
+        if not pending or pending.get("rule_id") != rid:
+            await event.edit("确认超时或数据不匹配，请重新设置")
+            await event.answer("确认失败")
+            state_manager.clear_state(user_id, chat_id)
+            return
+        
+        # 加载规则
+        rule = session.query(ForwardRule).get(rid)
+        if not rule:
+            await event.edit("规则不存在")
+            await event.answer("规则不存在")
+            state_manager.clear_state(user_id, chat_id)
+            return
+        
+        # 提交修改
+        rule.ai_rewrite_prompt = pending.get('new_prompt', '')
+        session.commit()
+        
+        # 清理状态
+        state_manager.clear_state(user_id, chat_id)
+        
+        # 返回AI增强设置页面
+        await event.edit(
+            await get_ai_enhance_settings_text(rule),
+            buttons=await create_ai_enhance_settings_buttons(rule)
+        )
+        await event.answer("AI改写提示词已保存")
+    except Exception as e:
+        logger.error(f"确认AI改写提示词时出错: {str(e)}")
+        await event.answer("保存失败")
+    finally:
+        session.close()
+
+
+async def callback_cancel_confirm_ai_rewrite_prompt(event, rule_id, session, message, data):
+    """取消保存AI改写提示词"""
+    try:
+        user_id = _resolve_state_user_id(event)
+        chat_id = abs(event.chat_id)
+        
+        # 清理状态
+        state_manager.clear_state(user_id, chat_id)
+        
+        # 如果规则存在，返回AI增强设置页面
+        rule = session.query(ForwardRule).get(int(rule_id))
+        if rule:
+            await event.edit(
+                await get_ai_enhance_settings_text(rule),
+                buttons=await create_ai_enhance_settings_buttons(rule)
+            )
+        
+        await event.answer("已取消设置")
+    except Exception as e:
+        logger.error(f"取消确认AI改写提示词时出错: {str(e)}")
+        await event.answer("取消失败")
+    finally:
+        session.close()

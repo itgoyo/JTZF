@@ -2,6 +2,7 @@ import logging
 import re
 from filters.base_filter import BaseFilter
 from ai import get_ai_provider
+from utils.constants import DEFAULT_AI_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ class AITagFilter(BaseFilter):
             return True
 
         max_count = rule.ai_tag_max_count or 3
-        model = rule.ai_tag_model or None
+        model = DEFAULT_AI_MODEL
 
         prompt = (
             f'请根据以下文本内容，提取最多 {max_count} 个最能概括主题的关键词作为标签。'

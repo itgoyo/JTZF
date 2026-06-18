@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Tuple, Optional, Union
+from typing import Dict, Tuple, Optional, Union, Any
 from telethon.tl.custom import Message
 
 logger = logging.getLogger(__name__)
@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 class StateManager:
     def __init__(self):
         self._states: Dict[Tuple[int, int], Tuple[str, Optional[Message], Optional[str]]] = {}
+        self._pending_data: Dict[Tuple[int, int], Any] = {}
         logger.info("StateManager 初始化")
     
     def set_state(self, user_id: int, chat_id: int, state: str, message: Optional[Message] = None, state_type: Optional[str] = None) -> None:
@@ -37,11 +38,33 @@ class StateManager:
         if key in self._states:
             del self._states[key]
             logger.info(f"清除状态 - key: {key}")
+        # Ensure pending confirmation payload is always removed with state.
+        if key in self._pending_data:
+            del self._pending_data[key]
+            logger.info(f"清除待确认数据 - key: {key}")
         logger.debug(f"当前所有状态: {self._states}")  # 改为 debug 级别
     
     def check_state(self) -> bool:
         """检查是否存在状态"""
         return bool(self._states)
+    
+    def set_pending_data(self, user_id: int, chat_id: int, data: Any) -> None:
+        """设置待确认数据"""
+        key = (user_id, chat_id)
+        self._pending_data[key] = data
+        logger.info(f"设置待确认数据 - key: {key}")
+    
+    def get_pending_data(self, user_id: int, chat_id: int) -> Optional[Any]:
+        """获取待确认数据"""
+        key = (user_id, chat_id)
+        return self._pending_data.get(key)
+    
+    def clear_pending_data(self, user_id: int, chat_id: int) -> None:
+        """清除待确认数据"""
+        key = (user_id, chat_id)
+        if key in self._pending_data:
+            del self._pending_data[key]
+            logger.info(f"清除待确认数据 - key: {key}")
 
 # 创建全局实例
 state_manager = StateManager()
